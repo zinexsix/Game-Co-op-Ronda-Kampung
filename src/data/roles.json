@@ -1,0 +1,53 @@
+{
+  "speedClasses": { "lambat": 3.6, "sedang": 4.6, "cepat": 5.8 },
+  "roles": [
+    {
+      "id": "penjaga",
+      "name": "Penjaga",
+      "hp": 150,
+      "speedClass": "lambat",
+      "damage": "rendah",
+      "color": "#3b82f6",
+      "skills": [
+        { "id": "perisai", "name": "Perisai", "duration": 3, "cooldown": 8, "note": "blokir serangan satu arah" },
+        { "id": "pancing", "name": "Pancing", "radius": 6, "duration": 4, "cooldown": 12, "note": "musuh dalam radius fokus ke Penjaga" }
+      ]
+    },
+    {
+      "id": "pembangun",
+      "name": "Pembangun",
+      "hp": 80,
+      "speedClass": "sedang",
+      "damage": "sedang",
+      "color": "#f59e0b",
+      "skills": [
+        { "id": "barikade", "name": "Barikade", "coinCost": 10, "note": "blokir jalur" },
+        { "id": "jebakan", "name": "Jebakan", "coinCost": 15, "duration": 3, "note": "musuh stun" }
+      ]
+    },
+    {
+      "id": "penyerang",
+      "name": "Penyerang",
+      "hp": 80,
+      "speedClass": "cepat",
+      "damage": "tinggi",
+      "color": "#ef4444",
+      "skills": [
+        { "id": "serangan_cepat", "name": "Serangan Cepat", "note": "tembakan beruntun searah hadap" },
+        { "id": "serangan_area", "name": "Serangan Area", "radius": 4, "cooldown": 15 }
+      ]
+    },
+    {
+      "id": "penyembuh",
+      "name": "Penyembuh",
+      "hp": 70,
+      "speedClass": "sedang",
+      "damage": "sangat_rendah",
+      "color": "#22c55e",
+      "skills": [
+        { "id": "heal", "name": "Heal", "radius": 5, "note": "pulihkan HP markas atau teman" },
+        { "id": "buff", "name": "Buff", "speedBonus": 0.3, "duration": 5, "note": "kecepatan tim" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "_note": "Nilai sementara (Tahap 1). Disetel ulang di Tahap 2 dan 5.",
+  "maxActive": 30,
+  "enemies": [
+    { "id": "tikus", "name": "Tikus Raksasa", "hp": 20, "speed": 3.2, "damage": 2, "color": "#8b6f5a", "size": 0.6, "target": "markas" },
+    { "id": "hantu", "name": "Hantu Iseng", "hp": 30, "speed": 2.4, "damage": 8, "color": "#c7d2fe", "size": 0.8, "target": "pemain" },
+    { "id": "pencuri", "name": "Pencuri", "hp": 25, "speed": 3.6, "damage": 0, "color": "#475569", "size": 0.8, "target": "koin" },
+    { "id": "genderuwo", "name": "Boss Genderuwo", "hp": 600, "speed": 1.6, "damage": 20, "color": "#3f1d1d", "size": 2.4, "target": "markas", "phases": 3 }
+  ]
+}

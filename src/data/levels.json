@@ -1,0 +1,8 @@
+{
+  "_note": "Kerangka awal (Tahap 1). Detail gelombang diisi di Tahap 4-5.",
+  "levels": [
+    { "id": 1, "name": "Latihan", "area": "Halaman pos ronda", "durationSec": 60, "enemyTypes": ["tikus"], "waves": 2, "tutorial": true },
+    { "id": 2, "name": "Ronda Biasa", "area": "Jalan kampung", "durationSec": 120, "enemyTypes": ["tikus", "hantu"], "waves": 4 },
+    { "id": 3, "name": "Malam Jumat", "area": "Lapangan dengan pohon besar", "durationSec": 120, "enemyTypes": ["tikus", "hantu", "pencuri"], "boss": "genderuwo" }
+  ]
+}

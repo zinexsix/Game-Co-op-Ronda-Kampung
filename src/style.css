@@ -1,0 +1,131 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #070a17;
+  font-family: system-ui, "Segoe UI", sans-serif;
+  color: #fff;
+  user-select: none;
+}
+
+#game {
+  width: 100%;
+  height: 100%;
+  display: block;
+  outline: none;
+  touch-action: none;
+}
+
+/* Lapisan UI 2D di atas kanvas; hanya elemen interaktif yang menerima klik. */
+#ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.settings-bar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+.settings-bar button {
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: #1f2937;
+  border: 2px solid #4b5563;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.settings-bar button.active {
+  background: #facc15;
+  border-color: #facc15;
+  color: #111;
+}
+
+.debug-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(0, 0, 0, 0.75);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font: 14px/1.5 ui-monospace, Consolas, monospace;
+  min-width: 420px;
+}
+
+.debug-overlay .big {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.debug-overlay .good {
+  color: #4ade80;
+}
+
+.debug-overlay .bad {
+  color: #f87171;
+}
+
+.debug-overlay table {
+  margin: 8px 0;
+  border-collapse: collapse;
+}
+
+.debug-overlay td {
+  padding: 1px 8px 1px 0;
+  white-space: nowrap;
+}
+
+.debug-overlay td.dir {
+  font-size: 18px;
+  width: 1.5em;
+  text-align: center;
+}
+
+.debug-overlay td.on {
+  background: #facc15;
+  color: #111;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.debug-overlay .keys,
+.debug-overlay .hint {
+  color: #cbd5e1;
+  max-width: 520px;
+}
+
+.debug-overlay .hint {
+  margin-top: 6px;
+  color: #94a3b8;
+}
+
+.status {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 18px;
+  text-align: center;
+}
+
+.status:empty {
+  display: none;
+}
