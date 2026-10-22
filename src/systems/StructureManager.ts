@@ -183,6 +183,11 @@ export class StructureManager {
     return "ok";
   }
 
+  /** true jika ada jebakan aktif dalam radius (bot tidak menumpuk jebakan). */
+  trapNear(x: number, z: number, radius: number): boolean {
+    return this.traps.some((t) => t.active && Math.hypot(t.x - x, t.z - z) < radius);
+  }
+
   damageBarricade(b: Barricade, amount: number): void {
     if (!b.active) return;
     b.hp -= amount;

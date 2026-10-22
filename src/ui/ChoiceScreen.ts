@@ -1,6 +1,13 @@
 import { PLAYER_BINDINGS } from "../config/controls";
 import type { InputManager } from "../systems/InputManager";
 
+/** Kembali otomatis jika tidak ada input selama `seconds` (mis. layar hasil -> menu). */
+export interface IdleTimeout {
+  seconds: number;
+  label: string;
+  onTimeout: () => void;
+}
+
 export interface ChoiceContent {
   /** "kalah" = bingkai merah, "menang" = bingkai hijau. */
   variant: "kalah" | "menang";
@@ -24,7 +31,11 @@ export class ChoiceScreen {
   private readonly body: HTMLDivElement;
   private readonly primary: HTMLButtonElement;
   private readonly secondary: HTMLButtonElement;
+  private readonly idleText: HTMLDivElement;
   private visible = false;
+  private idle: IdleTimeout | null = null;
+  private idleTimer = 0;
+  private lastIdleShown = -1;
   private delay = 0;
   private slots: number[] = [];
   private onPrimary: () => void = () => {};
@@ -50,6 +61,7 @@ export class ChoiceScreen {
           <button class="primary"><span></span><small>${s1}</small></button>
           <button class="secondary"><span></span><small>${s2}</small></button>
         </div>
+        <div class="choice-idle" hidden></div>
       </div>`;
     this.box = this.el.querySelector(".choice-box") as HTMLDivElement;
     this.title = this.el.querySelector(".choice-title") as HTMLDivElement;
@@ -57,6 +69,7 @@ export class ChoiceScreen {
     this.body = this.el.querySelector(".choice-body") as HTMLDivElement;
     this.primary = this.el.querySelector(".primary") as HTMLButtonElement;
     this.secondary = this.el.querySelector(".secondary") as HTMLButtonElement;
+    this.idleText = this.el.querySelector(".choice-idle") as HTMLDivElement;
     this.primary.addEventListener("click", () => this.choose(this.onPrimary));
     this.secondary.addEventListener("click", () => this.choose(this.onSecondary));
     parent.appendChild(this.el);
@@ -67,7 +80,11 @@ export class ChoiceScreen {
   }
 
   /** `slots` = slot pemain yang ikut bermain (hanya mereka yang bisa memilih). */
-  show(content: ChoiceContent, slots: number[], onPrimary: () => void, onSecondary: () => void): void {
+  show(content: ChoiceContent, slots: number[], onPrimary: () => void, onSecondary: () => void, idle?: IdleTimeout): void {
+    this.idle = idle ?? null;
+    this.idleTimer = idle?.seconds ?? 0;
+    this.lastIdleShown = -1;
+    this.idleText.hidden = !idle;
     this.box.className = `choice-box ${content.variant}`;
     this.title.textContent = content.title;
     this.subtitle.textContent = content.subtitle;
@@ -89,6 +106,17 @@ export class ChoiceScreen {
 
   update(dt: number): void {
     if (!this.visible) return;
+    if (this.idle) {
+      // Input apa pun dari pemain mana pun (termasuk yang belum ikut) mereset hitung mundur.
+      if (this.anyActivity()) this.idleTimer = this.idle.seconds;
+      this.idleTimer -= dt;
+      const left = Math.max(0, Math.ceil(this.idleTimer));
+      if (left !== this.lastIdleShown) {
+        this.lastIdleShown = left;
+        this.idleText.textContent = `${this.idle.label} dalam ${left} dtk`;
+      }
+      if (this.idleTimer <= 0) return this.choose(this.idle.onTimeout);
+    }
     this.delay -= dt;
     if (this.delay > 0) return;
     for (const slot of this.slots) {
@@ -96,6 +124,14 @@ export class ChoiceScreen {
       if (press.skill1) return this.choose(this.onPrimary);
       if (press.skill2) return this.choose(this.onSecondary);
     }
+  }
+
+  private anyActivity(): boolean {
+    for (let i = 0; i < this.input.playerCount; i++) {
+      const s = this.input.getState(i);
+      if (s.skill1 || s.skill2 || Math.abs(s.moveX) > 0.2 || Math.abs(s.moveZ) > 0.2) return true;
+    }
+    return false;
   }
 
   private choose(action: () => void): void {

@@ -42,7 +42,8 @@ export class RoleSelectScene {
     this.el.hidden = true;
     this.el.innerHTML = `
       <h1>RONDA BARENG</h1>
-      <p class="subtitle">Jaga pos ronda bersama dari serbuan malam! Pilih peran kalian.</p>`;
+      <p class="subtitle">Jaga pos ronda bersama dari serbuan malam! Pilih peran kalian.</p>
+      <p class="bot-note">🤖 Peran yang tidak dipilih akan dimainkan bot.</p>`;
 
     const cards = document.createElement("div");
     cards.className = "role-cards";

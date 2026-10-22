@@ -17,8 +17,43 @@
     "decayPerSec": 0.5
   },
   "roleSelect": {
-    "minPlayers": 2,
+    "minPlayers": 1,
     "startCountdownSec": 3
+  },
+  "bots": {
+    "_note": "Bot untuk peran yang tidak dipilih manusia. homeRadius = jarak berjaga dari pos ronda, leashRadius = batas jauh dari pos.",
+    "homeRadius": 3.6,
+    "leashRadius": 11,
+    "lureTriggerRadius": 5,
+    "lureMinEnemies": 2,
+    "shieldTriggerRadius": 2.2,
+    "trapMinDistance": 3,
+    "trapPathDistance": 4.5,
+    "coinCollectRadius": 11,
+    "areaMinEnemies": 3,
+    "healMarkasBelow": 0.7,
+    "healTeammateBelow": 0.5,
+    "buffMinEnemies": 6,
+    "reviveSearchRadius": 9,
+    "aimToleranceRad": 0.2,
+    "aimInput": 0.05,
+    "preferredShootDistance": 7,
+    "bossAvoidMargin": 1.2
+  },
+  "mvp": {
+    "_note": "Bobot poin kontribusi untuk menentukan MVP di layar hasil.",
+    "damage": 1,
+    "kills": 5,
+    "blocked": 2,
+    "lured": 6,
+    "healed": 2,
+    "buffs": 4,
+    "barricades": 10,
+    "barricadeAbsorbed": 1,
+    "trapsTriggered": 12,
+    "trapStuns": 8,
+    "revives": 30,
+    "coins": 2
   },
   "testMode": {
     "startCoins": 100,

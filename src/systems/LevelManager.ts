@@ -33,6 +33,8 @@ export class LevelManager {
 
   constructor(
     private readonly enemies: EnemyManager,
+    /** Id jenis musuh boss (untuk hasBossPending). */
+    private readonly bossTypes: ReadonlySet<string>,
     private readonly earlyNextWaveSec: number,
     /** Dipanggil saat gelombang baru mulai (pemain jatuh kembali di sini). */
     private readonly onWaveStart: (wave: number) => void,
@@ -80,6 +82,14 @@ export class LevelManager {
   /** Daftar koordinat semua titik spawn level (mode uji/benchmark). */
   get spawnPoints(): [number, number][] {
     return Object.values(this.level?.spawnPoints ?? {});
+  }
+
+  /** Level punya boss yang belum muncul atau masih hidup. */
+  get hasBossPending(): boolean {
+    if (this.enemies.boss) return true;
+    const level = this.level;
+    if (!level) return false;
+    return level.waves.slice(this.wavesStarted).some((w) => w.groups.some((g) => this.bossTypes.has(g.enemy)));
   }
 
   /** Jenis musuh yang muncul di level ini. */

@@ -5,6 +5,7 @@ import {
   GAME_RULES,
   LEVELS,
   MAX_ACTIVE_ENEMIES,
+  ENEMIES,
   REGULAR_ENEMIES,
   ROLES,
   SCORE_RULES,
@@ -25,6 +26,7 @@ import { Effects, RING_COLORS } from "../systems/Effects";
 import { EnemyManager } from "../systems/EnemyManager";
 import type { InputManager } from "../systems/InputManager";
 import { LevelManager } from "../systems/LevelManager";
+import { BotBrain, type BotWorld } from "../systems/BotBrain";
 import { ProjectileManager } from "../systems/ProjectileManager";
 import { ScoreSystem, type LevelScore } from "../systems/ScoreSystem";
 import { StructureManager } from "../systems/StructureManager";
@@ -35,6 +37,8 @@ import type { Arena } from "./ArenaScene";
 export interface Assignment {
   slot: number;
   roleId: RoleId;
+  /** Dimainkan bot (peran yang tidak dipilih manusia). */
+  bot?: boolean;
 }
 
 export type MatchState = "main" | "kalah" | "menang";
@@ -54,10 +58,14 @@ const FX_BLOCKED = new Color4(0.4, 0.75, 1, 1);
 const FX_WOOD = new Color4(0.65, 0.45, 0.25, 1);
 const FX_COIN = new Color4(1, 0.85, 0.2, 1);
 const FX_REVIVE = new Color4(0.6, 1, 0.7, 1);
+const FX_IMMUNE = new Color4(0.55, 0.6, 0.7, 1);
+const FX_SLAM = RING_COLORS.area;
 /** Benchmark: koin selalu cukup agar barikade/jebakan ikut teruji. */
 const BENCHMARK_COINS = 999;
 /** Lama pengumuman umum (mis. "Pencuri kabur!") tampil di HUD. */
 const ANNOUNCE_SEC = 2.5;
+const IMMUNE_FLASH_SEC = 0.6;
+const REGULAR_IDS = new Set(REGULAR_ENEMIES.map((e) => e.id));
 
 /**
  * Satu permainan: urutan level (Level 1, Level 2, ...), pemain terpilih, markas, musuh, koin,
@@ -96,6 +104,11 @@ export class MatchScene {
   private announceTimer = 0;
   private downCursor = 0;
   private testTypeCursor = 0;
+  private readonly bots = new Map<RoleId, BotBrain>();
+  private readonly botWorld: BotWorld;
+  private bossAnnounced = false;
+  /** Sisa waktu tanda "KEBAL" di bar boss (serangan mengenai boss yang tidak terjebak). */
+  bossImmuneFlash = 0;
 
   constructor(
     scene: Scene,
@@ -109,7 +122,7 @@ export class MatchScene {
     this.effects = new Effects(scene);
     const track = this.contributions;
 
-    this.enemies = new EnemyManager(scene, MAX_ACTIVE_ENEMIES, REGULAR_ENEMIES, {
+    this.enemies = new EnemyManager(scene, MAX_ACTIVE_ENEMIES, ENEMIES, {
       onKilled: (e, source) => {
         this.kills++;
         track.add(source, "kills");
@@ -127,6 +140,23 @@ export class MatchScene {
       },
       onSteal: (x, z) => this.effects.burst(x, 0.5, z, 5, FX_COIN, 3, 0.35, 0.1),
       onEscaped: (_e, coins) => this.announce(`Pencuri kabur membawa ${coins} koin!`),
+      onImmune: (x, z) => {
+        this.bossImmuneFlash = IMMUNE_FLASH_SEC;
+        this.effects.burst(x, 1.5, z, 2, FX_IMMUNE, 3, 0.25, 0.12);
+      },
+      onBossStunned: (e) => {
+        // Koin langsung masuk ke kas tim (koin di bawah kaki boss terlalu berbahaya untuk dipungut).
+        const coins = e.data?.boss?.coinsOnStun ?? 0;
+        this.coinCount += coins;
+        this.effects.rise(e.position.x, 1, e.position.z, 8, FX_COIN, 1, 0.8, 0.14);
+        this.announce(`${e.data?.name ?? "Boss"} terjebak! Serang sekarang! +${coins} koin`);
+      },
+      onBossPhase: (e, phase) => {
+        const name = e.data?.name ?? "Boss";
+        if (phase === 2) this.announce(`${name} memanggil Tikus Raksasa!`);
+        if (phase === 3) this.announce(`${name} mengamuk! Jebak lagi!`);
+      },
+      onSlam: (x, z, radius) => this.effects.areaBlast(x, z, radius, FX_SLAM),
     });
 
     // Ukuran pool proyektil dari data Penyerang (jumlah maksimal yang bisa melayang bersamaan).
@@ -152,9 +182,26 @@ export class MatchScene {
       },
     });
 
-    this.levels = new LevelManager(this.enemies, FLOW_RULES.earlyNextWaveSec, () => this.respawnDowned());
+    const bossTypes = new Set(ENEMIES.filter((e) => e.boss).map((e) => e.id));
+    this.levels = new LevelManager(this.enemies, bossTypes, FLOW_RULES.earlyNextWaveSec, () => this.respawnDowned());
 
     const match = this;
+    this.botWorld = {
+      get players() {
+        return match._activePlayers;
+      },
+      enemies: this.enemies,
+      coins: this.coins,
+      markas: this.markas,
+      structures: this.structures,
+      get coinCount() {
+        return match.coinCount;
+      },
+      get bossPending() {
+        return match.levels.hasBossPending;
+      },
+      abilityOf: (p) => this.abilityOf(p),
+    };
     this.ctx = {
       enemies: this.enemies,
       projectiles: this.projectiles,
@@ -175,6 +222,19 @@ export class MatchScene {
       notify: (player, text, kind = "info") => this.notices.push({ slot: player.slot, text, kind }),
       track: (role, stat, amount) => track.add(role, stat, amount),
     };
+  }
+
+  /** Jumlah pemain manusia (bukan bot). */
+  get humanCount(): number {
+    return this._activePlayers.filter((p) => !p.isBot).length;
+  }
+
+  /** MVP permainan: peran dengan kontribusi berbobot terbesar. */
+  get mvp(): { role: RoleId; points: number } | null {
+    return this.contributions.mvp(
+      this._activePlayers.map((p) => p.role.id),
+      GAME_RULES.mvp,
+    );
   }
 
   /** Pemain yang ikut bermain, urut slot. */
@@ -218,9 +278,11 @@ export class MatchScene {
   startRun(assignments: Assignment[], levelIndex = 0): void {
     this.assignments = [...assignments].sort((a, b) => a.slot - b.slot);
     for (const p of this.players) p.deactivate();
-    this._activePlayers = this.assignments.map(({ slot, roleId }) => {
+    this.bots.clear();
+    this._activePlayers = this.assignments.map(({ slot, roleId, bot }) => {
       const p = this.playerOf(roleId);
-      p.activate(slot, PLAYER_SPAWNS[slot]);
+      p.activate(slot, PLAYER_SPAWNS[slot], bot === true);
+      if (bot) this.bots.set(roleId, new BotBrain(p, GAME_RULES.bots));
       return p;
     });
     this.score.reset();
@@ -234,8 +296,8 @@ export class MatchScene {
     const level = this.level;
     this.arena.setLayout(level.arena.id);
     this.enemies.setSpawnPoints(Object.values(level.spawnPoints));
-    // Bot (Tahap 5) belum ada: semua pemain aktif adalah manusia.
-    this.levels.load(level, scalingFor(this._activePlayers.length));
+    // Kesulitan mengikuti jumlah pemain MANUSIA (bot tidak dihitung).
+    this.levels.load(level, scalingFor(this.humanCount));
     this.contributions.saveCheckpoint();
     this.resetLevelState();
   }
@@ -259,7 +321,7 @@ export class MatchScene {
   /** Benchmark: musuh selalu penuh, markas & pemain kebal, gelombang berhenti, koin tak terbatas. */
   setBenchmarkMode(on: boolean): void {
     this.benchmark = on;
-    this.enemies.setFill(on ? this.levels.enemyTypes : null);
+    this.enemies.setFill(on ? this.fillTypes : null);
     this.levels.paused = on || this.testMode;
     this.markas.invulnerable = on;
     for (const p of this.players) p.invulnerable = on;
@@ -303,14 +365,22 @@ export class MatchScene {
       this.effects.update(dt);
       return;
     }
-    if (this.benchmark) this.coinCount = BENCHMARK_COINS;
+    this.bossImmuneFlash = Math.max(0, this.bossImmuneFlash - dt);
+    if (this.benchmark) {
+      this.coinCount = BENCHMARK_COINS;
+      this.keepBenchmarkBoss();
+    }
     this.elapsed += dt;
     this.levels.update(dt);
 
     for (const p of this._activePlayers) {
-      const input = this.input.getState(p.slot);
+      // Bot menghasilkan input sendiri; manusia dari keyboard/gamepad slotnya.
+      const brain = p.isBot ? this.bots.get(p.role.id) : undefined;
+      brain?.think(this.botWorld);
+      const input = brain ? brain.input : this.input.getState(p.slot);
+      const presses = brain ? brain.presses : this.input.getPresses(p.slot);
       p.update(dt, input);
-      this.abilityOf(p).update(dt, p, input, this.input.getPresses(p.slot), this.ctx);
+      this.abilityOf(p).update(dt, p, input, presses, this.ctx);
     }
     separateCircles(this._activePlayers);
     for (const p of this._activePlayers) {
@@ -325,6 +395,11 @@ export class MatchScene {
     this.enemies.update(dt, this.markas, this._activePlayers, this.structures, this.coins);
     this.coins.update(dt, this._activePlayers);
     this.effects.update(dt);
+    const boss = this.enemies.boss;
+    if (boss && !this.bossAnnounced && !this.benchmark) {
+      this.bossAnnounced = true;
+      this.announce(`${boss.data?.name ?? "Boss"} datang! Jebak dulu, baru serang!`);
+    }
     this.hints.update(dt, {
       time: this.elapsed,
       wavesStarted: this.levels.wavesStarted,
@@ -356,6 +431,8 @@ export class MatchScene {
     this.notices = [];
     this.announcement = null;
     this.lastLevelScore = null;
+    this.bossAnnounced = false;
+    this.bossImmuneFlash = 0;
     this.markas.reset();
     this.enemies.reset();
     this.projectiles.reset();
@@ -364,13 +441,28 @@ export class MatchScene {
     this.structures.reset();
     this.levels.reset();
     this.levels.paused = this.testMode || this.benchmark;
-    this.enemies.setFill(this.benchmark ? this.levels.enemyTypes : null);
+    this.enemies.setFill(this.benchmark ? this.fillTypes : null);
     for (const p of this._activePlayers) {
       p.reset(PLAYER_SPAWNS[p.slot]);
       this.abilityOf(p).reset();
     }
-    if (this.level.tutorial && !this.benchmark) this.hints.start(this.level.hints, this._activePlayers);
+    if (this.level.tutorial && !this.benchmark) {
+      this.hints.start(this.level.hints, this._activePlayers.filter((p) => !p.isBot)); // petunjuk hanya untuk manusia
+    }
     else this.hints.stop();
+  }
+
+  /** Benchmark: musuh biasa level ini untuk mengisi pool (boss dimunculkan sendiri, satu saja). */
+  private get fillTypes(): string[] {
+    return this.levels.enemyTypes.filter((id) => REGULAR_IDS.has(id));
+  }
+
+  /** Benchmark di level ber-boss: pastikan satu boss selalu aktif. */
+  private keepBenchmarkBoss(): void {
+    const bossType = this.levels.enemyTypes.find((id) => !REGULAR_IDS.has(id));
+    if (!bossType || this.enemies.boss) return;
+    const [x, z] = this.levels.spawnPoints[0] ?? [0, ARENA.halfDepth];
+    this.enemies.spawnAt(bossType, x, z);
   }
 
   private announce(text: string): void {

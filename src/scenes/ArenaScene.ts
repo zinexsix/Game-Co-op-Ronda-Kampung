@@ -19,12 +19,16 @@ import {
 } from "@babylonjs/core";
 import { ARENA, setArenaBounds } from "../config/arena";
 import type { StaticBox } from "../systems/Collision";
+import { createGroundRing } from "../systems/Effects";
 
 /** Ukuran satu tata letak arena (dari levels.json). */
 export interface ArenaLayoutSpec {
   id: string;
   halfWidth: number;
   halfDepth: number;
+  /** Kabut tipis (Level 3): kerapatan kabut eksponensial & warnanya. */
+  fogDensity?: number;
+  fogColor?: string;
 }
 
 export interface Arena {
@@ -66,7 +70,8 @@ interface BuildCtx {
  */
 export function createArenaScene(engine: AbstractEngine, shadowMapSize: number, layouts: ArenaLayoutSpec[]): Arena {
   const scene = new Scene(engine);
-  scene.clearColor = new Color4(0.03, 0.04, 0.09, 1);
+  const nightSky = new Color4(0.03, 0.04, 0.09, 1);
+  scene.clearColor = nightSky.clone();
   scene.ambientColor = new Color3(0.15, 0.17, 0.25);
   // Hemat CPU: tidak ada picking pointer per frame.
   scene.skipPointerMovePicking = true;
@@ -202,6 +207,16 @@ export function createArenaScene(engine: AbstractEngine, shadowMapSize: number, 
       if (!target) throw new Error(`Tata letak arena tidak ada: ${id}`);
       for (const { root } of roots.values()) root.setEnabled(root === target.root);
       setArenaBounds(target.spec.halfWidth, target.spec.halfDepth);
+      // Kabut sederhana bawaan Babylon (dihitung per piksel di shader standar, tanpa post-processing).
+      const fog = target.spec.fogDensity ?? 0;
+      scene.fogMode = fog > 0 ? Scene.FOGMODE_EXP2 : Scene.FOGMODE_NONE;
+      if (fog > 0) {
+        scene.fogDensity = fog;
+        scene.fogColor = Color3.FromHexString(target.spec.fogColor ?? "#1b2236");
+        scene.clearColor = Color4.FromColor3(scene.fogColor, 1);
+      } else {
+        scene.clearColor = nightSky.clone();
+      }
       layoutId = id;
       fitCamera();
     },
@@ -220,6 +235,7 @@ export function createArenaScene(engine: AbstractEngine, shadowMapSize: number, 
 const LAYOUT_BUILDERS: Record<string, (c: BuildCtx) => void> = {
   halaman: buildHalaman,
   jalan: buildJalan,
+  lapangan: buildLapangan,
 };
 
 /** Level 1: halaman pos ronda. Kecil dan terbuka: tanah lapang, pagar bambu keliling, semak, sumur. */
@@ -448,6 +464,96 @@ function buildJalan(c: BuildCtx): void {
   c.statics.push(bamboo);
 
   addLamps(c, "j", [[-10, 3.5], [10, 3.5], [-10, -3.5], [10, -3.5]]);
+}
+
+/** Level 3: lapangan kampung malam Jumat. Pohon beringin besar di tepi, gawang, makam tua di sudut atas. */
+function buildLapangan(c: BuildCtx): void {
+  const { scene, mat, hw, hd } = c;
+  const ground = MeshBuilder.CreateGround("l_ground", { width: (hw + ARENA.groundMargin) * 2, height: (hd + ARENA.groundMargin) * 2 }, scene);
+  ground.material = mat("fieldGrass", "#2a4426");
+  c.statics.push(ground);
+  c.receivers.push(ground);
+
+  // Lapangan rumput lebih terang dengan garis kapur pudar (garis tengah + lingkaran tengah).
+  const field = MeshBuilder.CreateGround("l_field", { width: hw * 2 - 1, height: hd * 2 - 1 }, scene);
+  field.position.y = 0.01;
+  field.material = mat("fieldLight", "#335230");
+  const line = MeshBuilder.CreateBox("l_line", { size: 1 }, scene);
+  line.material = mat("chalk", "#8c9a80");
+  setThinInstances(line, [
+    trsScaled(0, 0.02, hd - 0.6, hw * 2 - 1.2, 0.02, 0.12, 0),
+    trsScaled(0, 0.02, -hd + 0.6, hw * 2 - 1.2, 0.02, 0.12, 0),
+    trsScaled(-hw + 0.6, 0.02, 0, 0.12, 0.02, hd * 2 - 1.2, 0),
+    trsScaled(hw - 0.6, 0.02, 0, 0.12, 0.02, hd * 2 - 1.2, 0),
+    trsScaled(-hw / 2 - 1, 0.02, 0, 0.12, 0.02, hd * 2 - 1.2, 0),
+    trsScaled(hw / 2 + 1, 0.02, 0, 0.12, 0.02, hd * 2 - 1.2, 0),
+  ]);
+  const circle = createGroundRing("l_circle", scene, 0.06);
+  circle.scaling.set(4.5, 1, 4.5);
+  circle.position.y = 0.02;
+  circle.material = mat("chalk", "#8c9a80");
+  c.statics.push(field, line, circle);
+  c.receivers.push(field);
+
+  // Gawang bambu di kedua ujung lapangan.
+  const goalPost = MeshBuilder.CreateBox("l_goalPost", { size: 1 }, scene);
+  goalPost.material = mat("bamboo", "#9a8a4a");
+  const goals: Matrix[] = [];
+  for (const side of [-1, 1]) {
+    const x = side * (hw - 0.4);
+    goals.push(trsScaled(x, 1.0, -2, 0.15, 2.0, 0.15, 0), trsScaled(x, 1.0, 2, 0.15, 2.0, 0.15, 0));
+    goals.push(trsScaled(x, 2.0, 0, 0.15, 0.15, 4.15, 0));
+  }
+  setThinInstances(goalPost, goals);
+  c.statics.push(goalPost);
+  c.casters.push(goalPost);
+
+  // Pohon beringin besar: batang gemuk + tiga gumpalan daun (semua instanced), di luar area main.
+  const trunk = MeshBuilder.CreateCylinder("l_bigTrunk", { diameterTop: 0.8, diameterBottom: 1.4, height: 3.2, tessellation: 8 }, scene);
+  trunk.material = mat("wood", "#7a5232");
+  const canopy = MeshBuilder.CreateIcoSphere("l_canopy", { radius: 1.6, subdivisions: 1, flat: true }, scene);
+  canopy.material = mat("darkLeaf", "#183322");
+  const root2 = MeshBuilder.CreateCylinder("l_aerialRoot", { diameter: 0.12, height: 2.6, tessellation: 4 }, scene);
+  root2.material = mat("wood", "#7a5232");
+  const bigTrees = [
+    [-hw - 3, hd + 2.5], [-hw * 0.45, hd + 3.2], [hw * 0.4, hd + 3.4], [hw + 3, hd + 2.2],
+    [-hw - 3.2, 2], [hw + 3.4, -1.5], [-hw - 2.8, -hd + 1], [hw + 2.8, -hd + 2.5],
+  ];
+  const trunks: Matrix[] = [];
+  const canopies: Matrix[] = [];
+  const roots: Matrix[] = [];
+  const rng = mulberry32(5);
+  for (const [x, z] of bigTrees) {
+    const s = 1 + rng() * 0.35;
+    trunks.push(trs(x, 1.6 * s, z, s));
+    for (const [ox, oy, oz, cs] of [[0, 4.2, 0, 1.3], [-1.3, 3.6, 0.4, 1], [1.2, 3.8, -0.4, 1.05]]) {
+      canopies.push(trs(x + ox * s, oy * s, z + oz * s, cs * s, rng() * Math.PI));
+    }
+    // Akar gantung beringin.
+    for (let i = 0; i < 4; i++) {
+      const a = rng() * Math.PI * 2;
+      roots.push(trs(x + Math.cos(a) * 1.6 * s, 1.3 * s, z + Math.sin(a) * 1.4 * s, s));
+    }
+  }
+  setThinInstances(trunk, trunks);
+  setThinInstances(canopy, canopies);
+  setThinInstances(root2, roots);
+  c.statics.push(trunk, canopy, root2);
+  c.casters.push(trunk, canopy);
+
+  // Makam tua (nisan) di sudut kanan atas, di luar area main.
+  const grave = MeshBuilder.CreateBox("l_grave", { width: 0.5, height: 0.8, depth: 0.15 }, scene);
+  grave.material = mat("graveStone", "#6f7478");
+  const graves: Matrix[] = [];
+  for (let i = 0; i < 9; i++) {
+    graves.push(trs(hw - 6 + (i % 3) * 1.4 + rng() * 0.3, 0.4, hd + 1.4 + Math.floor(i / 3) * 1.2, 1, (rng() - 0.5) * 0.3, 0, (rng() - 0.5) * 0.2));
+  }
+  setThinInstances(grave, graves);
+  c.statics.push(grave);
+
+  // Pohon biasa melingkari tepi (lebih jarang), lampu redup.
+  addTrees(c, "l", ringPositions(16, hw + 2.4, hd + 2.4, 9, [hw - 4.6]));
+  addLamps(c, "l", [[-hw * 0.5, hd - 1.2], [hw * 0.5, -hd + 1.2]]);
 }
 
 // --- Potongan dekorasi bersama (masing-masing 1 draw call per jenis) ---

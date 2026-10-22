@@ -58,7 +58,7 @@ export class DebugOverlay {
         const dir = s.connected ? arrow(s.moveX, s.moveZ) : "—";
         const move = s.connected ? `${s.moveX.toFixed(2)}, ${s.moveZ.toFixed(2)}` : "tidak terhubung";
         return `<tr style="color:${p.role.color}">
-          <td>P${i + 1}</td><td>${p.role.name}</td><td>HP ${Math.ceil(p.hp)}${p.downed ? " (jatuh)" : ""}</td><td>${b.label}</td>
+          <td>P${i + 1}</td><td>${p.role.name}</td><td>HP ${Math.ceil(p.hp)}${p.downed ? " (jatuh)" : ""}</td><td>${p.isBot ? "🤖 bot" : b.label}</td>
           <td class="dir">${dir}</td><td>${move}</td>
           <td class="${s.skill1 ? "on" : ""}">S1</td><td class="${s.skill2 ? "on" : ""}">S2</td></tr>`;
       })

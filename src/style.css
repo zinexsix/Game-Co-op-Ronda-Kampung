@@ -612,12 +612,12 @@ kbd {
   left: 50%;
   transform: translateX(-50%);
   max-width: 80vw;
-  background: rgba(15, 23, 42, 0.92);
+  background: rgba(15, 23, 42, 0.8);
   border: 3px solid #facc15;
   color: #fff;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
-  padding: 10px 22px;
+  padding: 6px 18px;
   border-radius: 12px;
   text-align: center;
   box-shadow: 0 4px 0 #a16207;
@@ -735,4 +735,187 @@ kbd {
   font-size: 14px;
   font-weight: 600;
   opacity: 0.8;
+}
+
+/* ---------- Boss ---------- */
+.boss-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(40, 6, 6, 0.75);
+  border: 2px solid #b91c1c;
+  padding: 6px 12px;
+  border-radius: 10px;
+}
+
+.boss-name {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fca5a5;
+  white-space: nowrap;
+}
+
+.boss-bar {
+  position: relative;
+  width: 300px;
+  height: 22px;
+  border: 2px solid #fecaca;
+  border-radius: 6px;
+  background: #1f0a0a;
+  overflow: hidden;
+}
+
+.boss-fill {
+  height: 100%;
+  background: #dc2626;
+  transition: width 0.15s linear;
+}
+
+.boss-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  text-shadow: 0 1px 2px #000;
+}
+
+.boss-state {
+  font-size: 15px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.boss-state.shut {
+  background: #475569;
+}
+
+.boss-state.open {
+  background: #16a34a;
+  animation: pulse 0.4s ease-in-out infinite alternate;
+}
+
+/* Saat ada boss, banner petunjuk turun sedikit agar tidak menutupi bar boss. */
+.hud.has-boss .hud-banner {
+  top: 205px;
+}
+
+/* ---------- Kartu bot ---------- */
+.bot-badge {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 800;
+  background: #334155;
+  color: #cbd5e1;
+  padding: 1px 6px;
+  border-radius: 5px;
+}
+
+.player-card.bot {
+  border-style: dashed;
+}
+
+.player-card.downed .bot-badge {
+  display: none;
+}
+
+.role-select .bot-note {
+  margin: -8px 0 0;
+  font-size: 18px;
+  color: #94a3b8;
+}
+
+.choice-idle {
+  margin-top: 14px;
+  font-size: 15px;
+  color: #94a3b8;
+}
+
+/* ---------- Menu utama ---------- */
+.menu-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: radial-gradient(ellipse at center, rgba(7, 10, 23, 0.4), rgba(7, 10, 23, 0.9));
+  text-align: center;
+}
+
+.menu-screen h1 {
+  margin: 0;
+  font-size: 84px;
+  letter-spacing: 6px;
+  color: #facc15;
+  text-shadow: 0 6px 0 #78350f;
+}
+
+.menu-tagline {
+  margin: 0;
+  font-size: 24px;
+  color: #e2e8f0;
+}
+
+.menu-roles {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.menu-start {
+  margin-top: 16px;
+  font-size: 34px;
+  font-weight: 900;
+  color: #4ade80;
+  animation: pulse 0.9s ease-in-out infinite alternate;
+}
+
+.menu-note {
+  margin: 0;
+  font-size: 18px;
+  color: #94a3b8;
+}
+
+.menu-controls {
+  display: flex;
+  gap: 18px;
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  font-size: 16px;
+  color: #cbd5e1;
+}
+
+/* ---------- Layar hasil ---------- */
+.mvp {
+  margin: 10px auto 6px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 3px solid var(--role);
+  background: rgba(0, 0, 0, 0.35);
+  display: inline-block;
+}
+
+.mvp-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #fde047;
+  letter-spacing: 2px;
+}
+
+.mvp-name {
+  font-size: 30px;
+  font-weight: 900;
+  color: var(--role);
+}
+
+.mvp-detail {
+  font-size: 15px;
+  color: #cbd5e1;
 }

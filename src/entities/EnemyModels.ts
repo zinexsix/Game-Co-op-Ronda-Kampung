@@ -14,7 +14,7 @@ export interface EnemyModel {
 
 type Part = [Mesh, Color4];
 
-/** Buat model low-poly untuk musuh biasa (anggaran PRD: maks 500 segitiga; tikus maks 300). */
+/** Buat model low-poly musuh (anggaran PRD: musuh biasa maks 500 segitiga, tikus maks 300, boss maks 3.000). */
 export function buildEnemyModel(scene: Scene, data: EnemyData): EnemyModel {
   switch (data.id) {
     case "tikus":
@@ -23,6 +23,8 @@ export function buildEnemyModel(scene: Scene, data: EnemyData): EnemyModel {
       return { mesh: buildGhost(scene, data), baseY: 0.35, headY: data.size * 2.3, bob: "melayang" };
     case "pencuri":
       return { mesh: buildThief(scene, data), baseY: 0, headY: data.size * 2.4, bob: "jalan" };
+    case "genderuwo":
+      return { mesh: buildGenderuwo(scene, data), baseY: 0, headY: data.size * 1.45, bob: "jalan" };
     default:
       throw new Error(`Model musuh belum dibuat: ${data.id}`);
   }
@@ -184,4 +186,70 @@ function buildThief(scene: Scene, data: EnemyData): Mesh {
   parts.push([bag, sack]);
 
   return merge(scene, data, parts, 0.8, 0.35);
+}
+
+/** Boss Genderuwo (~1.000 segitiga): raksasa berbulu gelap, mata merah menyala, taring, lengan panjang. */
+function buildGenderuwo(scene: Scene, data: EnemyData): Mesh {
+  const fur = furColor(data);
+  const dark = new Color4(fur.r * 0.6, fur.g * 0.55, fur.b * 0.55, 1);
+  const skin = new Color4(0.35, 0.2, 0.18, 1);
+  const eye = new Color4(1, 0.15, 0.05, 1);
+  const fang = new Color4(0.95, 0.92, 0.8, 1);
+  const parts: Part[] = [];
+
+  // Badan besar membungkuk.
+  const torso = MeshBuilder.CreateIcoSphere("gTorso", { radiusX: 0.95, radiusY: 1.05, radiusZ: 0.75, subdivisions: 3, flat: true }, scene);
+  torso.position.set(0, 1.75, 0);
+  torso.rotation.x = 0.15;
+  parts.push([torso, fur]);
+
+  const head = MeshBuilder.CreateIcoSphere("gHead", { radius: 0.5, subdivisions: 2, flat: true }, scene);
+  head.position.set(0, 2.85, 0.25);
+  parts.push([head, fur]);
+
+  // Wajah: moncong gelap, mata menyala, dua taring.
+  const face = MeshBuilder.CreateIcoSphere("gFace", { radiusX: 0.32, radiusY: 0.24, radiusZ: 0.2, subdivisions: 1, flat: true }, scene);
+  face.position.set(0, 2.72, 0.66);
+  parts.push([face, skin]);
+  for (const side of [-1, 1]) {
+    const e = MeshBuilder.CreateIcoSphere("gEye", { radius: 0.09, subdivisions: 1 }, scene);
+    e.position.set(side * 0.18, 2.95, 0.68);
+    parts.push([e, eye]);
+    const f = MeshBuilder.CreateCylinder("gFang", { diameterTop: 0, diameterBottom: 0.08, height: 0.2, tessellation: 4 }, scene);
+    f.rotation.x = Math.PI;
+    f.position.set(side * 0.1, 2.55, 0.8);
+    parts.push([f, fang]);
+    // Tanduk kecil.
+    const horn = MeshBuilder.CreateCylinder("gHorn", { diameterTop: 0, diameterBottom: 0.14, height: 0.4, tessellation: 5 }, scene);
+    horn.rotation.z = -side * 0.5;
+    horn.position.set(side * 0.32, 3.3, 0.2);
+    parts.push([horn, dark]);
+  }
+
+  // Lengan panjang menjuntai + kepalan besar.
+  for (const side of [-1, 1]) {
+    const arm = MeshBuilder.CreateCylinder("gArm", { diameterTop: 0.42, diameterBottom: 0.3, height: 1.5, tessellation: 8 }, scene);
+    arm.rotation.z = side * 0.25;
+    arm.rotation.x = -0.25;
+    arm.position.set(side * 1.05, 1.6, 0.2);
+    parts.push([arm, fur]);
+    const fist = MeshBuilder.CreateIcoSphere("gFist", { radius: 0.3, subdivisions: 1, flat: true }, scene);
+    fist.position.set(side * 1.25, 0.85, 0.4);
+    parts.push([fist, skin]);
+    const leg = MeshBuilder.CreateCylinder("gLeg", { diameterTop: 0.5, diameterBottom: 0.38, height: 1.0, tessellation: 8 }, scene);
+    leg.position.set(side * 0.45, 0.5, 0);
+    parts.push([leg, dark]);
+  }
+
+  // Rumbai bulu di punggung & bahu.
+  for (let i = 0; i < 20; i++) {
+    const a = (i / 20) * Math.PI * 2;
+    const y = 1.5 + (i % 3) * 0.45;
+    const tuft = MeshBuilder.CreateCylinder("gTuft", { diameterTop: 0, diameterBottom: 0.22, height: 0.45, tessellation: 4 }, scene);
+    tuft.position.set(Math.cos(a) * 0.85, y, Math.sin(a) * 0.65 - 0.05);
+    tuft.rotation.z = -Math.cos(a) * 1.1;
+    tuft.rotation.x = Math.sin(a) * 1.1;
+    parts.push([tuft, dark]);
+  }
+  return merge(scene, data, parts, 2.4, 0.3);
 }

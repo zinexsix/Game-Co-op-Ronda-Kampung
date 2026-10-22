@@ -17,6 +17,12 @@ export class Enemy {
   carried = 0;
   /** Pencuri: sedang kabur ke tepi arena. */
   fleeing = false;
+  /** Boss: fase 1-3 menurut sisa HP. */
+  phase = 1;
+  /** Boss: hitung mundur memanggil anak buah (fase 2). */
+  summonTimer = 0;
+  /** Boss: setelah stun selesai, kebal stun selama ini. */
+  stunImmuneTimer = 0;
   /** Hitung mundur ke serangan berikutnya (detik). */
   attackTimer = 0;
   /** Sisa waktu animasi "tersentak" setelah terkena serangan. */
@@ -44,6 +50,9 @@ export class Enemy {
     this.hp = this.maxHp;
     this.carried = 0;
     this.fleeing = false;
+    this.phase = 1;
+    this.summonTimer = data.boss?.summonIntervalSec ?? 0;
+    this.stunImmuneTimer = 0;
     this.position.set(x, 0, z);
     this.velocity.setAll(0);
     this.yaw = Math.atan2(-x, -z);

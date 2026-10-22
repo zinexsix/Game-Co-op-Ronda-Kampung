@@ -46,6 +46,14 @@ export interface EnemyEvents {
   onSteal: (x: number, z: number) => void;
   /** Pencuri lolos di tepi arena membawa koin. */
   onEscaped: (e: Enemy, coins: number) => void;
+  /** Serangan mengenai boss yang sedang kebal (tidak terkena stun). */
+  onImmune: (x: number, z: number) => void;
+  /** Boss baru saja terkena stun jebakan. */
+  onBossStunned: (e: Enemy) => void;
+  /** Boss masuk fase baru (2 = memanggil tikus, 3 = mengamuk). */
+  onBossPhase: (e: Enemy, phase: number) => void;
+  /** Boss menghantam tanah (efek visual). */
+  onSlam: (x: number, z: number, radius: number) => void;
 }
 
 interface RenderBucket {
@@ -122,6 +130,11 @@ export class EnemyManager {
     return this._activeCount;
   }
 
+  /** Boss yang sedang aktif (paling banyak satu), atau null. */
+  get boss(): Enemy | null {
+    return this.pool.find((e) => e.active && e.data?.boss) ?? null;
+  }
+
   /** Jumlah musuh aktif per jenis. */
   countOf(typeId: string): number {
     return this.buckets.get(typeId)?.count ?? 0;
@@ -168,6 +181,11 @@ export class EnemyManager {
   /** Beri damage; mengembalikan true jika musuh kalah karenanya. `source` = peran penyerang. */
   damage(e: Enemy, amount: number, source?: RoleId): boolean {
     if (!e.active) return false;
+    // Boss hanya bisa dilukai saat terkena stun jebakan: butuh kerja sama Pembangun + penyerang.
+    if (e.data?.boss?.onlyDamageWhenStunned && !e.stunned) {
+      this.events.onImmune(e.position.x, e.position.z);
+      return false;
+    }
     const dealt = Math.min(amount, e.hp);
     e.hp -= amount;
     e.hitTimer = HIT_ANIM_SEC;
@@ -205,7 +223,8 @@ export class EnemyManager {
   stunWithin(x: number, z: number, radius: number, duration: number): number {
     let n = 0;
     for (const e of this.pool) {
-      if (!e.active || !this.within(e, x, z, radius)) continue;
+      if (!e.active || e.stunImmuneTimer > 0 || !this.within(e, x, z, radius)) continue;
+      if (e.data?.boss && !e.stunned) this.events.onBossStunned(e);
       e.stunTimer = Math.max(e.stunTimer, duration);
       e.velocity.setAll(0);
       n++;
@@ -275,20 +294,27 @@ export class EnemyManager {
       e.lureTimer = Math.max(0, e.lureTimer - dt);
       if (e.lureTimer <= 0 || !e.lureTarget?.active || e.lureTarget.downed) e.lureTarget = null;
 
-      // Stun: diam di tempat, tidak menyerang.
+      e.stunImmuneTimer = Math.max(0, e.stunImmuneTimer - dt);
+      const boss = d.boss;
+      if (boss) this.updateBossPhase(e, boss);
+
+      // Stun: diam di tempat, tidak menyerang. Boss lalu kebal stun sebentar agar tidak terkunci terus.
       if (e.stunTimer > 0) {
         e.stunTimer = Math.max(0, e.stunTimer - dt);
         e.velocity.setAll(0);
         e.attackTimer = Math.max(e.attackTimer, 0);
+        if (e.stunTimer <= 0 && boss) e.stunImmuneTimer = boss.stunCooldownSec;
         continue;
       }
+      if (boss && e.phase === 2) this.summon(e, boss, dt);
+      const enraged = boss !== undefined && e.phase === 3;
 
       // --- Tujuan gerak ---
       const lure = e.lureTarget;
       let chase: Player | null = lure;
       let tx = box.cx;
       let tz = box.cz;
-      let speed = d.speed;
+      let speed = enraged ? d.speed * boss.enrageSpeedMult : d.speed;
       if (lure) {
         tx = lure.position.x;
         tz = lure.position.z;
@@ -380,11 +406,13 @@ export class EnemyManager {
       else if (Math.abs(e.velocity.x) + Math.abs(e.velocity.z) > 0.1) e.yaw = Math.atan2(e.velocity.x, e.velocity.z);
 
       if (attacking && e.attackTimer <= 0) {
-        e.attackTimer = d.attackInterval;
+        e.attackTimer = enraged ? d.attackInterval * boss.enrageAttackMult : d.attackInterval;
         e.biteTimer = BITE_ANIM_SEC;
         const fx = e.position.x + Math.sin(e.yaw) * e.radius;
         const fz = e.position.z + Math.cos(e.yaw) * e.radius;
-        if (victim) {
+        if (boss) {
+          this.slam(e, d, boss, markas, players, structures, wall);
+        } else if (victim) {
           const result = victim.takeDamage(d.playerDamage, e.position.x, e.position.z);
           if (result !== "diabaikan") this.events.onAttack(fx, fz, "pemain", { amount: d.playerDamage, victim, result });
         } else if (wall) {
@@ -398,6 +426,55 @@ export class EnemyManager {
     }
 
     this.writeInstances();
+  }
+
+  /** Fase boss menurut sisa HP; beri tahu saat berganti fase. */
+  private updateBossPhase(e: Enemy, boss: NonNullable<EnemyData["boss"]>): void {
+    const ratio = e.hp / e.maxHp;
+    const phase = ratio > boss.phase2At ? 1 : ratio > boss.phase3At ? 2 : 3;
+    if (phase !== e.phase) {
+      e.phase = phase;
+      e.summonTimer = 0; // fase 2 langsung memanggil anak buah pertama
+      this.events.onBossPhase(e, phase);
+    }
+  }
+
+  /** Fase 2: panggil beberapa Tikus Raksasa di sekitar boss secara berkala. */
+  private summon(e: Enemy, boss: NonNullable<EnemyData["boss"]>, dt: number): void {
+    e.summonTimer -= dt;
+    if (e.summonTimer > 0) return;
+    e.summonTimer = boss.summonIntervalSec;
+    for (let i = 0; i < boss.summonCount; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = e.radius + 1;
+      const x = Math.max(-ARENA.halfWidth, Math.min(ARENA.halfWidth, e.position.x + Math.cos(a) * r));
+      const z = Math.max(-ARENA.halfDepth, Math.min(ARENA.halfDepth, e.position.z + Math.sin(a) * r));
+      this.spawnAt(boss.summonEnemy, x, z);
+    }
+  }
+
+  /** Hantaman boss: semua pemain dalam slamRadius terkena, juga markas / barikade yang sedang diserang. */
+  private slam(
+    e: Enemy, d: EnemyData, boss: NonNullable<EnemyData["boss"]>, markas: Markas,
+    players: readonly Player[], structures: StructureManager, wall: Barricade | null,
+  ): void {
+    const { x, z } = e.position;
+    this.events.onSlam(x, z, boss.slamRadius);
+    for (const p of players) {
+      if (!p.active || p.downed) continue;
+      const gap = Math.hypot(p.position.x - x, p.position.z - z) - p.radius;
+      if (gap > boss.slamRadius) continue;
+      const result = p.takeDamage(d.playerDamage, x, z);
+      if (result !== "diabaikan") this.events.onAttack(p.position.x, p.position.z, "pemain", { amount: d.playerDamage, victim: p, result });
+    }
+    if (wall) {
+      structures.damageBarricade(wall, d.barricadeDamage);
+      this.events.onAttack(x, z, "barikade", { amount: d.barricadeDamage });
+    }
+    if (distanceToBox(x, z, markas.box) <= boss.slamRadius) {
+      markas.damage(d.baseDamage);
+      this.events.onAttack(x, z, "markas", { amount: d.baseDamage });
+    }
   }
 
   /**

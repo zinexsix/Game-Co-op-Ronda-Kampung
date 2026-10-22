@@ -82,6 +82,27 @@ export interface EnemyData {
   /** Pengali lama efek Pancing (Pencuri mudah dipancing). */
   lureMultiplier?: number;
   phases?: number;
+  /** Hanya untuk boss. */
+  boss?: BossData;
+}
+
+export interface BossData {
+  /** Hanya menerima damage saat terkena stun jebakan. */
+  onlyDamageWhenStunned: boolean;
+  /** Setelah stun selesai, kebal stun selama ini (detik). */
+  stunCooldownSec: number;
+  /** Koin yang masuk ke kas tim setiap kali boss terjebak (agar tim bisa membeli jebakan berikutnya). */
+  coinsOnStun: number;
+  /** Serangan menghantam semua pemain dalam radius ini. */
+  slamRadius: number;
+  /** Rasio HP batas fase 2 dan fase 3. */
+  phase2At: number;
+  phase3At: number;
+  summonEnemy: string;
+  summonCount: number;
+  summonIntervalSec: number;
+  enrageSpeedMult: number;
+  enrageAttackMult: number;
 }
 
 /** Satu kelompok musuh dalam gelombang: muncul satu per satu dari titik bernama (bergiliran). */
@@ -111,7 +132,7 @@ export interface LevelData {
   area: string;
   /** false = belum bisa dimainkan (menyusul). */
   playable?: boolean;
-  arena: { id: string; halfWidth: number; halfDepth: number };
+  arena: { id: string; halfWidth: number; halfDepth: number; fogDensity?: number; fogColor?: string };
   /** Batas waktu untuk bonus waktu skor. */
   parTimeSec: number;
   tutorial?: boolean;
@@ -136,6 +157,29 @@ export interface FlowRules {
   screenInputDelaySec: number;
   hintSec: number;
   hintGapSec: number;
+  /** Layar hasil kembali ke menu setelah sekian detik tanpa input. */
+  resultIdleSec: number;
+}
+
+export interface BotRules {
+  homeRadius: number;
+  leashRadius: number;
+  lureTriggerRadius: number;
+  lureMinEnemies: number;
+  shieldTriggerRadius: number;
+  trapMinDistance: number;
+  trapPathDistance: number;
+  coinCollectRadius: number;
+  areaMinEnemies: number;
+  healMarkasBelow: number;
+  healTeammateBelow: number;
+  buffMinEnemies: number;
+  reviveSearchRadius: number;
+  aimToleranceRad: number;
+  aimInput: number;
+  preferredShootDistance: number;
+  /** Jarak tambahan di luar radius hantaman boss yang dijaga bot. */
+  bossAvoidMargin: number;
 }
 
 export interface GameRules {
@@ -144,6 +188,9 @@ export interface GameRules {
   player: { hitInvulnSec: number };
   revive: { radius: number; durationSec: number; hpFraction: number; decayPerSec: number };
   testMode: { startCoins: number; addCoins: number; spawnGroup: number };
+  bots: BotRules;
+  /** Bobot poin per jenis kontribusi (MVP). */
+  mvp: Record<string, number>;
   roleSelect: { minPlayers: number; startCountdownSec: number };
 }
 
@@ -155,9 +202,9 @@ export const LEVELS = levelsJson.levels as unknown as LevelData[];
 export const PLAYER_SCALING = levelsJson.playerScaling as unknown as Record<string, PlayerScaling>;
 export const SCORE_RULES = levelsJson.score as ScoreRules;
 export const FLOW_RULES = levelsJson.flow as FlowRules;
-/** Musuh biasa yang punya model di Tahap 4 (boss menyusul di Tahap 5). */
-export const REGULAR_ENEMIES = ENEMIES.filter((e) => e.phases === undefined);
-export const GAME_RULES = gameJson as GameRules;
+/** Musuh biasa (bukan boss): dipakai mode uji & isi benchmark. */
+export const REGULAR_ENEMIES = ENEMIES.filter((e) => !e.boss);
+export const GAME_RULES = gameJson as unknown as GameRules;
 
 export function getRole(id: RoleId): RoleData {
   const role = ROLES.find((r) => r.id === id);
@@ -165,9 +212,9 @@ export function getRole(id: RoleId): RoleData {
   return role;
 }
 
-/** Pengali kesulitan untuk jumlah pemain manusia (dibatasi ke 2-4). */
+/** Pengali kesulitan untuk jumlah pemain manusia (1 = solo bersama bot, dibatasi ke 1-4). */
 export function scalingFor(humans: number): PlayerScaling {
-  const n = Math.max(2, Math.min(4, humans));
+  const n = Math.max(1, Math.min(4, humans));
   return PLAYER_SCALING[String(n)];
 }
 

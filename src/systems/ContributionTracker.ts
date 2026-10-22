@@ -44,6 +44,24 @@ export class ContributionTracker {
     return this.byRole.get(role) ?? empty();
   }
 
+  /** Poin kontribusi berbobot satu peran (untuk MVP). */
+  points(role: RoleId, weights: Record<string, number>): number {
+    const c = this.get(role);
+    let total = 0;
+    for (const [stat, value] of Object.entries(c)) total += value * (weights[stat] ?? 0);
+    return Math.round(total);
+  }
+
+  /** Peran dengan poin kontribusi terbesar di antara `roles`, atau null jika semua nol. */
+  mvp(roles: readonly RoleId[], weights: Record<string, number>): { role: RoleId; points: number } | null {
+    let best: { role: RoleId; points: number } | null = null;
+    for (const role of roles) {
+      const points = this.points(role, weights);
+      if (points > 0 && (!best || points > best.points)) best = { role, points };
+    }
+    return best;
+  }
+
   /** Mulai permainan baru: semua nol. */
   reset(): void {
     for (const r of ROLES) this.byRole.set(r.id, empty());

@@ -35,6 +35,8 @@ export class Player {
   readonly maxHp: number;
   /** Slot input (0-3 = P1-P4). -1 jika peran ini tidak dipakai. */
   slot = -1;
+  /** Dimainkan bot (peran yang tidak dipilih manusia); input slot diabaikan. */
+  isBot = false;
   hp: number;
   /** HP 0: tidak bisa bergerak/menyerang, diabaikan musuh (revive di Tahap 3). */
   downed = false;
@@ -158,14 +160,16 @@ export class Player {
   }
 
   /** Pakai peran ini untuk slot input tertentu dan taruh di titik awal. */
-  activate(slot: number, spawn: Vector3): void {
+  activate(slot: number, spawn: Vector3, isBot = false): void {
     this.slot = slot;
+    this.isBot = isBot;
     this.root.setEnabled(true);
     this.reset(spawn);
   }
 
   deactivate(): void {
     this.slot = -1;
+    this.isBot = false;
     this.root.setEnabled(false);
   }
 

@@ -1,5 +1,5 @@
 {
-  "_note": "target: markas | pemain | koin. barricadeBypass = seberapa jauh dari tengah barikade (0-1, relatif setengah lebar) musuh memilih memutar, bukan menggigit; musuh dengan barricadeDamage 0 selalu memutar. passesBarricades = menembus barikade. Pencuri: mencuri sampai carryMax koin lalu kabur ke tepi arena (fleeSpeedMult). lureMultiplier = pengali lama efek Pancing. Boss disetel di Tahap 5.",
+  "_note": "target: markas | pemain | koin. barricadeBypass = seberapa jauh dari tengah barikade (0-1, relatif setengah lebar) musuh memilih memutar, bukan menggigit; musuh dengan barricadeDamage 0 selalu memutar. passesBarricades = menembus barikade. Pencuri: mencuri sampai carryMax koin lalu kabur ke tepi arena (fleeSpeedMult). lureMultiplier = pengali lama efek Pancing. boss: hanya menerima damage saat terkena stun jebakan (setelah stun, kebal stun selama stunCooldownSec; tiap kali terjebak tim mendapat coinsOnStun koin untuk jebakan berikutnya); fase 2 di bawah phase2At HP memanggil summonEnemy, fase 3 di bawah phase3At mengamuk (kecepatan x enrageSpeedMult, jeda serangan x enrageAttackMult); serangan menghantam semua pemain dalam slamRadius.",
   "maxActive": 30,
   "enemies": [
     {
@@ -54,6 +54,35 @@
       "fleeSpeedMult": 1.25,
       "lureMultiplier": 1.75
     },
-    { "id": "genderuwo", "name": "Boss Genderuwo", "hp": 600, "speed": 1.6, "color": "#3f1d1d", "size": 2.4, "target": "markas", "baseDamage": 10, "playerDamage": 20, "attackInterval": 2.0, "attackRange": 0.6, "coinDrop": 10, "barricadeDamage": 20, "barricadeBypass": 0, "phases": 3 }
+    {
+      "id": "genderuwo",
+      "name": "Boss Genderuwo",
+      "hp": 380,
+      "speed": 1.4,
+      "color": "#3f1d1d",
+      "size": 2.4,
+      "target": "markas",
+      "baseDamage": 3,
+      "playerDamage": 18,
+      "attackInterval": 2.0,
+      "attackRange": 0.5,
+      "coinDrop": 12,
+      "barricadeDamage": 25,
+      "barricadeBypass": 0,
+      "phases": 3,
+      "boss": {
+        "onlyDamageWhenStunned": true,
+        "stunCooldownSec": 3,
+        "coinsOnStun": 8,
+        "slamRadius": 2.6,
+        "phase2At": 0.66,
+        "phase3At": 0.33,
+        "summonEnemy": "tikus",
+        "summonCount": 3,
+        "summonIntervalSec": 7,
+        "enrageSpeedMult": 1.7,
+        "enrageAttackMult": 0.6
+      }
+    }
   ]
 }

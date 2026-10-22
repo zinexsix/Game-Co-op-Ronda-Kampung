@@ -51,6 +51,12 @@ export class Hud {
   private readonly testBadge: HTMLDivElement;
   private readonly levelText: HTMLSpanElement;
   private readonly banner: HTMLDivElement;
+  private readonly bossPanel: HTMLDivElement;
+  private readonly bossName: HTMLSpanElement;
+  private readonly bossFill: HTMLDivElement;
+  private readonly bossText: HTMLSpanElement;
+  private readonly bossState: HTMLSpanElement;
+  private lastBoss = "";
   private readonly cardRow: HTMLDivElement;
   private readonly floatLayer: HTMLDivElement;
   private cards: PlayerCard[] = [];
@@ -77,6 +83,11 @@ export class Hud {
           <span class="coin-count"></span>
           <span class="wave-info"></span>
         </div>
+        <div class="boss-panel" hidden>
+          <span class="boss-name"></span>
+          <div class="boss-bar"><div class="boss-fill"></div><span class="boss-text"></span></div>
+          <span class="boss-state"></span>
+        </div>
         <div class="test-badge" hidden>MODE UJI · ${SYSTEM_KEYS.testSpawn} munculkan tikus · ${SYSTEM_KEYS.testCoins} +koin & reset cooldown · ${SYSTEM_KEYS.testDown} jatuhkan pemain · ${SYSTEM_KEYS.toggleTestMode} keluar</div>
       </div>
       <div class="hud-banner" hidden></div>
@@ -90,6 +101,11 @@ export class Hud {
     this.testBadge = this.el.querySelector(".test-badge") as HTMLDivElement;
     this.levelText = this.el.querySelector(".level-info") as HTMLSpanElement;
     this.banner = this.el.querySelector(".hud-banner") as HTMLDivElement;
+    this.bossPanel = this.el.querySelector(".boss-panel") as HTMLDivElement;
+    this.bossName = this.el.querySelector(".boss-name") as HTMLSpanElement;
+    this.bossFill = this.el.querySelector(".boss-fill") as HTMLDivElement;
+    this.bossText = this.el.querySelector(".boss-text") as HTMLSpanElement;
+    this.bossState = this.el.querySelector(".boss-state") as HTMLSpanElement;
     this.cardRow = this.el.querySelector(".player-cards") as HTMLDivElement;
     this.floatLayer = this.el.querySelector(".float-layer") as HTMLDivElement;
   }
@@ -105,6 +121,9 @@ export class Hud {
     this.lastWave = "";
     this.lastBanner = null;
     this.banner.hidden = true;
+    this.lastBoss = "";
+    this.bossPanel.hidden = true;
+    this.el.classList.remove("has-boss");
     this.levelText.textContent = `Level ${match.level.id} · ${match.level.name}`;
     this.el.hidden = false;
     this.update(match, 0, project);
@@ -149,6 +168,8 @@ export class Hud {
       this.waveText.textContent = waveText;
     }
 
+    this.updateBoss(match);
+
     const bannerText = match.bannerText;
     if (bannerText !== this.lastBanner) {
       this.lastBanner = bannerText;
@@ -175,10 +196,32 @@ export class Hud {
     for (const c of this.cards) this.updateCard(c, match, dt, project);
   }
 
+  /** Bar HP boss + fase + status: hanya bisa dilukai saat terjebak (stun). */
+  private updateBoss(match: MatchScene): void {
+    const boss = match.enemies.boss;
+    const phases = boss?.data?.phases ?? 1;
+    const state = !boss ? "" : boss.stunned ? "jebak" : match.bossImmuneFlash > 0 ? "kebal!" : "kebal";
+    const key = boss ? `${Math.ceil(boss.hp)}|${boss.maxHp}|${boss.phase}|${state}` : "";
+    if (key === this.lastBoss) return;
+    const appeared = this.lastBoss === "" && key !== "";
+    this.lastBoss = key;
+    this.bossPanel.hidden = !boss;
+    this.el.classList.toggle("has-boss", !!boss);
+    if (!boss) return;
+    this.bossName.textContent = `👹 ${boss.data?.name ?? "Boss"} · Fase ${boss.phase}/${phases}`;
+    const ratio = Math.max(0, boss.hp) / boss.maxHp;
+    this.bossFill.style.width = `${ratio * 100}%`;
+    this.bossText.textContent = `${Math.max(0, Math.ceil(boss.hp))} / ${boss.maxHp}`;
+    this.bossState.textContent = boss.stunned ? "TERJEBAK! Serang sekarang!" : "KEBAL: jebak dulu!";
+    this.bossState.className = `boss-state ${boss.stunned ? "open" : "shut"}`;
+    if (state === "kebal!") shake(this.bossState);
+    if (appeared) shake(this.bossPanel);
+  }
+
   private buildCard(player: Player, skills: readonly SkillStatus[]): PlayerCard {
     const b = PLAYER_BINDINGS[player.slot];
     const root = document.createElement("div");
-    root.className = "player-card";
+    root.className = `player-card${player.isBot ? " bot" : ""}`;
     root.style.setProperty("--role", player.role.color);
     root.style.setProperty("--slot", SLOT_COLORS[player.slot]);
     root.innerHTML = `
@@ -187,12 +230,14 @@ export class Hud {
         <span class="slot-badge">P${player.slot + 1}</span>
         <span class="card-icon">${player.role.icon}</span>
         <span class="card-name">${player.role.name}</span>
+        ${player.isBot ? '<span class="bot-badge">🤖 BOT</span>' : ""}
         <span class="downed-badge">JATUH</span>
       </div>
       <div class="hp-bar"><div class="hp-fill"></div><span class="hp-text"></span></div>
       <div class="skills"></div>`;
     const skillRow = root.querySelector(".skills") as HTMLDivElement;
-    const keys = [b.skill1Label, b.skill2Label];
+    // Bot tidak punya tombol: tampilkan ikon bot.
+    const keys = player.isBot ? ["🤖", "🤖"] : [b.skill1Label, b.skill2Label];
     const views = skills.map((s, i) => {
       const el = document.createElement("div");
       el.className = "skill";
