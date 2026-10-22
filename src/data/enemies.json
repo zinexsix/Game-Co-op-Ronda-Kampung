@@ -1,5 +1,5 @@
 {
-  "_note": "Tikus Raksasa disetel di Tahap 2-3. barricadeBypass = seberapa dekat ke ujung barikade (0-1) musuh memilih memutar, bukan menggigit. Musuh lain masih nilai sementara (Tahap 4-5).",
+  "_note": "target: markas | pemain | koin. barricadeBypass = seberapa jauh dari tengah barikade (0-1, relatif setengah lebar) musuh memilih memutar, bukan menggigit; musuh dengan barricadeDamage 0 selalu memutar. passesBarricades = menembus barikade. Pencuri: mencuri sampai carryMax koin lalu kabur ke tepi arena (fleeSpeedMult). lureMultiplier = pengali lama efek Pancing. Boss disetel di Tahap 5.",
   "maxActive": 30,
   "enemies": [
     {
@@ -18,8 +18,42 @@
       "barricadeDamage": 3,
       "barricadeBypass": 0.55
     },
-    { "id": "hantu", "name": "Hantu Iseng", "hp": 30, "speed": 2.4, "color": "#c7d2fe", "size": 0.8, "target": "pemain", "baseDamage": 0, "playerDamage": 8, "attackInterval": 1.2, "attackRange": 0.4, "coinDrop": 1, "barricadeDamage": 3, "barricadeBypass": 0.55 },
-    { "id": "pencuri", "name": "Pencuri", "hp": 25, "speed": 3.6, "color": "#475569", "size": 0.8, "target": "koin", "baseDamage": 0, "playerDamage": 0, "attackInterval": 1.0, "attackRange": 0.4, "coinDrop": 2, "barricadeDamage": 3, "barricadeBypass": 0.55 },
+    {
+      "id": "hantu",
+      "name": "Hantu Iseng",
+      "hp": 30,
+      "speed": 2.4,
+      "color": "#c7d2fe",
+      "size": 0.9,
+      "target": "pemain",
+      "baseDamage": 0,
+      "playerDamage": 8,
+      "attackInterval": 1.2,
+      "attackRange": 0.4,
+      "coinDrop": 2,
+      "barricadeDamage": 0,
+      "barricadeBypass": 0,
+      "passesBarricades": true
+    },
+    {
+      "id": "pencuri",
+      "name": "Pencuri",
+      "hp": 25,
+      "speed": 3.6,
+      "color": "#475569",
+      "size": 0.8,
+      "target": "koin",
+      "baseDamage": 0,
+      "playerDamage": 0,
+      "attackInterval": 1.0,
+      "attackRange": 0.4,
+      "coinDrop": 2,
+      "barricadeDamage": 0,
+      "barricadeBypass": 0,
+      "carryMax": 3,
+      "fleeSpeedMult": 1.25,
+      "lureMultiplier": 1.75
+    },
     { "id": "genderuwo", "name": "Boss Genderuwo", "hp": 600, "speed": 1.6, "color": "#3f1d1d", "size": 2.4, "target": "markas", "baseDamage": 10, "playerDamage": 20, "attackInterval": 2.0, "attackRange": 0.6, "coinDrop": 10, "barricadeDamage": 20, "barricadeBypass": 0, "phases": 3 }
   ]
 }

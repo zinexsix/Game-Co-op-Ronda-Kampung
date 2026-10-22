@@ -1,13 +1,11 @@
 import {
   Color3,
-  Color4,
   Matrix,
   Mesh,
   MeshBuilder,
   Quaternion,
   StandardMaterial,
   Vector3,
-  VertexBuffer,
   type Scene,
 } from "@babylonjs/core";
 import { ARENA } from "../config/arena";
@@ -278,21 +276,18 @@ function oldest<T extends { order: number }>(items: T[]): T {
   return items.reduce((a, b) => (b.order < a.order ? b : a));
 }
 
-/** Gabungkan bagian berwarna per-vertex menjadi satu mesh (1 material). */
-function mergeColored(scene: Scene, name: string, parts: [Mesh, Color4][]): Mesh {
-  for (const [m, c] of parts) {
-    const count = m.getTotalVertices();
-    const colors = new Float32Array(count * 4);
-    for (let i = 0; i < count; i++) colors.set([c.r, c.g, c.b, 1], i * 4);
-    m.setVerticesData(VertexBuffer.ColorKind, colors);
-  }
-  const merged = Mesh.MergeMeshes(parts.map(([m]) => m), true, true);
+/**
+ * Gabungkan bagian-bagian menjadi satu mesh satu warna (1 material).
+ * Sengaja TANPA warna per-vertex: mesh ini memakai warna per-instance, dan shader Babylon
+ * gagal dikompilasi jika keduanya digabung pada render tanpa instancing ("instanceColor" tak dikenal).
+ */
+function mergeSolid(scene: Scene, name: string, parts: Mesh[], color: Color3): Mesh {
+  const merged = Mesh.MergeMeshes(parts, true, true);
   if (!merged) throw new Error(`Gagal membuat mesh ${name}`);
   merged.name = name;
-  merged.hasVertexAlpha = false;
   const mat = new StandardMaterial(`${name}Mat`, scene);
-  mat.diffuseColor = Color3.White();
-  mat.emissiveColor = new Color3(0.3, 0.3, 0.3); // tetap terbaca di malam hari
+  mat.diffuseColor = color;
+  mat.emissiveColor = color.scale(0.35); // tetap terbaca di malam hari
   mat.specularColor = Color3.Black();
   merged.material = mat;
   return merged;
@@ -300,36 +295,31 @@ function mergeColored(scene: Scene, name: string, parts: [Mesh, Color4][]): Mesh
 
 /** Barikade kayu: 2 tiang + 3 papan melintang (sumbu lebar = X lokal). */
 function buildBarricadeMesh(scene: Scene, width: number, depth: number): Mesh {
-  const wood = new Color4(0.62, 0.42, 0.24, 1);
-  const dark = new Color4(0.42, 0.28, 0.16, 1);
-  const parts: [Mesh, Color4][] = [];
+  const parts: Mesh[] = [];
   for (const side of [-1, 1]) {
     const post = MeshBuilder.CreateBox("bPost", { width: 0.22, height: BARRICADE_HEIGHT + 0.15, depth: depth }, scene);
     post.position.set(side * (width / 2 - 0.11), (BARRICADE_HEIGHT + 0.15) / 2, 0);
-    parts.push([post, dark]);
+    parts.push(post);
   }
   for (let i = 0; i < 3; i++) {
     const plank = MeshBuilder.CreateBox("bPlank", { width: width, height: 0.22, depth: depth * 0.6 }, scene);
     plank.position.set(0, 0.2 + i * 0.32, 0);
     plank.rotation.z = (i - 1) * 0.04; // sedikit miring agar terlihat buatan tangan
-    parts.push([plank, wood]);
+    parts.push(plank);
   }
-  return mergeColored(scene, "barricade", parts);
+  return mergeSolid(scene, "barricade", parts, new Color3(0.62, 0.42, 0.24));
 }
 
 /** Jebakan: piringan logam + 6 paku kecil. */
 function buildTrapMesh(scene: Scene, radius: number): Mesh {
-  const metal = new Color4(0.55, 0.58, 0.62, 1);
-  const spike = new Color4(0.95, 0.85, 0.3, 1);
-  const parts: [Mesh, Color4][] = [];
   const plate = MeshBuilder.CreateCylinder("tPlate", { diameter: radius * 2, height: 0.08, tessellation: 12 }, scene);
   plate.position.y = 0.04;
-  parts.push([plate, metal]);
+  const parts: Mesh[] = [plate];
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
     const s = MeshBuilder.CreateCylinder("tSpike", { diameterTop: 0, diameterBottom: 0.16, height: 0.3, tessellation: 4 }, scene);
     s.position.set(Math.cos(a) * radius * 0.6, 0.22, Math.sin(a) * radius * 0.6);
-    parts.push([s, spike]);
+    parts.push(s);
   }
-  return mergeColored(scene, "trap", parts);
+  return mergeSolid(scene, "trap", parts, new Color3(0.85, 0.75, 0.35));
 }

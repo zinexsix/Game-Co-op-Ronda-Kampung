@@ -38,7 +38,9 @@ export class PembangunAbility implements RoleAbility {
       const d = this.barricadeDistance;
       const px = x + fx * d;
       const pz = z + fz * d;
-      this.build(player, ctx, this.barricadeCost, px, pz, () => ctx.structures.placeBarricade(px, pz, fx, fz));
+      if (this.build(player, ctx, this.barricadeCost, px, pz, () => ctx.structures.placeBarricade(px, pz, fx, fz))) {
+        ctx.track(player.role.id, "barricades");
+      }
     }
     if (presses.skill2) {
       const d = this.trapDistance;
@@ -49,17 +51,18 @@ export class PembangunAbility implements RoleAbility {
   }
 
   /** Cek koin -> pasang -> potong koin. Koin hanya dipotong jika pemasangan berhasil. */
-  private build(player: Player, ctx: CombatContext, cost: number, px: number, pz: number, place: () => PlaceResult): void {
+  private build(player: Player, ctx: CombatContext, cost: number, px: number, pz: number, place: () => PlaceResult): boolean {
     if (ctx.coins < cost) {
       ctx.notify(player, `Koin kurang! Butuh ${cost} 🪙`, "koin");
-      return;
+      return false;
     }
     if (place() !== "ok") {
       ctx.notify(player, "Tidak bisa dipasang di sini");
-      return;
+      return false;
     }
     ctx.spendCoins(cost);
     ctx.effects.burst(px, 0.4, pz, 8, FX_BUILD, 3, 0.4, 0.12);
+    return true;
   }
 
   reset(): void {

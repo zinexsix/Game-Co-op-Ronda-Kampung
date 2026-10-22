@@ -1,6 +1,18 @@
 import { Color4, type Scene } from "@babylonjs/core";
 import { ARENA } from "../config/arena";
-import { GAME_RULES, MAX_ACTIVE_ENEMIES, ROLES, TEST_WAVE, getEnemy, getRole, type RoleId } from "../data/types";
+import {
+  FLOW_RULES,
+  GAME_RULES,
+  LEVELS,
+  MAX_ACTIVE_ENEMIES,
+  REGULAR_ENEMIES,
+  ROLES,
+  SCORE_RULES,
+  getRole,
+  scalingFor,
+  type LevelData,
+  type RoleId,
+} from "../data/types";
 import { Markas } from "../entities/Markas";
 import { PLAYER_SPAWNS, Player } from "../entities/Player";
 import { createAbility } from "../roles";
@@ -8,12 +20,15 @@ import { PenyerangAbility } from "../roles/Penyerang";
 import type { CombatContext, NoticeKind, RoleAbility } from "../roles/RoleAbility";
 import { CoinManager } from "../systems/CoinManager";
 import { clampToArena, pushOutOfBox, separateCircles } from "../systems/Collision";
+import { ContributionTracker } from "../systems/ContributionTracker";
 import { Effects, RING_COLORS } from "../systems/Effects";
 import { EnemyManager } from "../systems/EnemyManager";
 import type { InputManager } from "../systems/InputManager";
+import { LevelManager } from "../systems/LevelManager";
 import { ProjectileManager } from "../systems/ProjectileManager";
+import { ScoreSystem, type LevelScore } from "../systems/ScoreSystem";
 import { StructureManager } from "../systems/StructureManager";
-import { WaveDirector } from "../systems/WaveDirector";
+import { TutorialHints } from "../systems/TutorialHints";
 import type { Arena } from "./ArenaScene";
 
 /** Pemain di slot input tertentu memakai peran tertentu. */
@@ -22,7 +37,7 @@ export interface Assignment {
   roleId: RoleId;
 }
 
-export type MatchState = "main" | "kalah";
+export type MatchState = "main" | "kalah" | "menang";
 
 /** Pesan singkat untuk kartu HUD pemain. */
 export interface Notice {
@@ -41,10 +56,13 @@ const FX_COIN = new Color4(1, 0.85, 0.2, 1);
 const FX_REVIVE = new Color4(0.6, 1, 0.7, 1);
 /** Benchmark: koin selalu cukup agar barikade/jebakan ikut teruji. */
 const BENCHMARK_COINS = 999;
+/** Lama pengumuman umum (mis. "Pencuri kabur!") tampil di HUD. */
+const ANNOUNCE_SEC = 2.5;
 
 /**
- * Satu pertandingan: pemain terpilih, markas, musuh, koin, struktur, dan gelombang percobaan.
- * Semua objek dibuat sekali; mulai ulang hanya me-reset status (tanpa memuat ulang aset).
+ * Satu permainan: urutan level (Level 1, Level 2, ...), pemain terpilih, markas, musuh, koin,
+ * struktur, skor tim, dan kontribusi per peran. Semua objek dibuat sekali; mulai ulang atau
+ * pindah level hanya me-reset status dan mengganti tata letak arena (tanpa memuat ulang aset).
  */
 export class MatchScene {
   /** Satu Player per peran (urutan sama dengan roles.json). */
@@ -55,11 +73,17 @@ export class MatchScene {
   readonly coins: CoinManager;
   readonly effects: Effects;
   readonly structures: StructureManager;
-  readonly waves: WaveDirector;
+  readonly levels: LevelManager;
+  readonly score = new ScoreSystem(SCORE_RULES);
+  readonly contributions = new ContributionTracker();
+  readonly hints = new TutorialHints(FLOW_RULES);
   state: MatchState = "main";
   coinCount = 0;
   kills = 0;
   elapsed = 0;
+  levelIndex = 0;
+  /** Skor level terakhir yang dimenangkan. */
+  lastLevelScore: LevelScore | null = null;
   /** Mode uji skill: gelombang berhenti, musuh/koin dimunculkan manual (F6-F9). */
   testMode = false;
   private benchmark = false;
@@ -68,7 +92,10 @@ export class MatchScene {
   private readonly ctx: CombatContext;
   private _activePlayers: Player[] = [];
   private notices: Notice[] = [];
+  private announcement: string | null = null;
+  private announceTimer = 0;
   private downCursor = 0;
+  private testTypeCursor = 0;
 
   constructor(
     scene: Scene,
@@ -80,19 +107,26 @@ export class MatchScene {
 
     this.markas = new Markas(GAME_RULES.markas.hp, arena.postBox);
     this.effects = new Effects(scene);
+    const track = this.contributions;
 
-    this.enemies = new EnemyManager(scene, MAX_ACTIVE_ENEMIES, getEnemy(TEST_WAVE.enemyType), TEST_WAVE.spawnPoints, {
-      onKilled: (e) => {
+    this.enemies = new EnemyManager(scene, MAX_ACTIVE_ENEMIES, REGULAR_ENEMIES, {
+      onKilled: (e, source) => {
         this.kills++;
-        const d = e.data;
+        track.add(source, "kills");
         this.effects.burst(e.position.x, 0.4, e.position.z, 8, FX_DEATH, 4, 0.5, 0.16);
-        if (d) this.coins.drop(e.position.x, e.position.z, d.coinDrop);
+        // Pencuri yang kalah menjatuhkan koin curiannya juga.
+        if (e.data) this.coins.drop(e.position.x, e.position.z, e.data.coinDrop + e.carried);
       },
-      onAttack: (x, z, target, result) => {
+      onDamaged: (amount, source) => track.add(source, "damage", amount),
+      onAttack: (x, z, target, info) => {
+        if (info.result === "diblokir") track.add(info.victim?.role.id, "blocked", info.amount);
+        if (target === "barikade") track.add("pembangun", "barricadeAbsorbed", info.amount);
         const color =
-          target === "markas" ? FX_BITE_MARKAS : target === "barikade" ? FX_WOOD : result === "diblokir" ? FX_BLOCKED : FX_BITE_PLAYER;
+          target === "markas" ? FX_BITE_MARKAS : target === "barikade" ? FX_WOOD : info.result === "diblokir" ? FX_BLOCKED : FX_BITE_PLAYER;
         this.effects.burst(x, 0.5, z, 4, color, 3, 0.3, 0.12);
       },
+      onSteal: (x, z) => this.effects.burst(x, 0.5, z, 5, FX_COIN, 3, 0.35, 0.1),
+      onEscaped: (_e, coins) => this.announce(`Pencuri kabur membawa ${coins} koin!`),
     });
 
     // Ukuran pool proyektil dari data Penyerang (jumlah maksimal yang bisa melayang bersamaan).
@@ -102,18 +136,23 @@ export class MatchScene {
       if (!killed) this.effects.burst(x, 0.5, z, 3, FX_HIT, 3, 0.2, 0.1);
     });
 
-    this.coins = new CoinManager(scene, GAME_RULES.coins, (x, z) => {
+    this.coins = new CoinManager(scene, GAME_RULES.coins, (x, z, player) => {
       this.coinCount++;
+      track.add(player.role.id, "coins");
       this.effects.burst(x, 0.5, z, 5, FX_COIN, 3, 0.35, 0.1);
     });
 
     const [barricade, trap] = getRole("pembangun").skills;
     this.structures = new StructureManager(scene, barricade, trap, arena.postBox, {
       onBarricadeBroken: (x, z) => this.effects.burst(x, 0.5, z, 14, FX_WOOD, 4, 0.6, 0.18),
-      onTrapTriggered: (x, z) => this.effects.areaBlast(x, z, trap.radius ?? 1, RING_COLORS.trap),
+      onTrapTriggered: (x, z, stunned) => {
+        track.add("pembangun", "trapsTriggered");
+        track.add("pembangun", "trapStuns", stunned);
+        this.effects.areaBlast(x, z, trap.radius ?? 1, RING_COLORS.trap);
+      },
     });
 
-    this.waves = new WaveDirector(TEST_WAVE, this.enemies, () => this.respawnDowned());
+    this.levels = new LevelManager(this.enemies, FLOW_RULES.earlyNextWaveSec, () => this.respawnDowned());
 
     const match = this;
     this.ctx = {
@@ -134,6 +173,7 @@ export class MatchScene {
         return true;
       },
       notify: (player, text, kind = "info") => this.notices.push({ slot: player.slot, text, kind }),
+      track: (role, stat, amount) => track.add(role, stat, amount),
     };
   }
 
@@ -144,6 +184,21 @@ export class MatchScene {
 
   get currentAssignments(): readonly Assignment[] {
     return this.assignments;
+  }
+
+  get level(): LevelData {
+    return LEVELS[this.levelIndex];
+  }
+
+  /** Indeks level berikutnya yang bisa dimainkan, atau null jika ini level terakhir. */
+  get nextLevelIndex(): number | null {
+    for (let i = this.levelIndex + 1; i < LEVELS.length; i++) if (LEVELS[i].playable !== false) return i;
+    return null;
+  }
+
+  /** Teks banner HUD: pengumuman (prioritas) atau petunjuk tutorial. */
+  get bannerText(): string | null {
+    return this.announcement ?? this.hints.text;
   }
 
   abilityOf(p: Player): RoleAbility {
@@ -159,8 +214,8 @@ export class MatchScene {
     return out;
   }
 
-  /** Mulai pertandingan baru dengan pembagian peran ini. */
-  start(assignments: Assignment[]): void {
+  /** Permainan baru dengan pembagian peran ini, mulai dari level `levelIndex` (default Level 1). */
+  startRun(assignments: Assignment[], levelIndex = 0): void {
     this.assignments = [...assignments].sort((a, b) => a.slot - b.slot);
     for (const p of this.players) p.deactivate();
     this._activePlayers = this.assignments.map(({ slot, roleId }) => {
@@ -168,34 +223,34 @@ export class MatchScene {
       p.activate(slot, PLAYER_SPAWNS[slot]);
       return p;
     });
-    this.restart();
+    this.score.reset();
+    this.contributions.reset();
+    this.startLevel(levelIndex);
   }
 
-  /** Ulangi pertandingan dengan peran yang sama ("Coba Lagi"). */
-  restart(): void {
-    this.state = "main";
-    this.coinCount = this.testMode ? GAME_RULES.testMode.startCoins : 0;
-    this.kills = 0;
-    this.elapsed = 0;
-    this.notices = [];
-    this.markas.reset();
-    this.enemies.reset();
-    this.projectiles.reset();
-    this.coins.reset();
-    this.effects.reset();
-    this.structures.reset();
-    this.waves.reset();
-    this.waves.paused = this.testMode || this.benchmark;
-    for (const p of this._activePlayers) {
-      p.reset(PLAYER_SPAWNS[p.slot]);
-      this.abilityOf(p).reset();
-    }
+  /** Muat level: tata letak arena, titik spawn, gelombang (dengan pengali jumlah pemain), lalu mulai. */
+  startLevel(index: number): void {
+    this.levelIndex = index;
+    const level = this.level;
+    this.arena.setLayout(level.arena.id);
+    this.enemies.setSpawnPoints(Object.values(level.spawnPoints));
+    // Bot (Tahap 5) belum ada: semua pemain aktif adalah manusia.
+    this.levels.load(level, scalingFor(this._activePlayers.length));
+    this.contributions.saveCheckpoint();
+    this.resetLevelState();
   }
 
-  /** Keluar dari pertandingan (kembali ke pilih peran). */
+  /** Coba Lagi: ulangi level yang sama (kontribusi kembali ke awal level, skor level sebelumnya tetap). */
+  retryLevel(): void {
+    this.contributions.restoreCheckpoint();
+    this.startLevel(this.levelIndex);
+  }
+
+  /** Keluar dari permainan (kembali ke pilih peran). */
   stop(): void {
     this.setTestMode(false);
-    this.restart();
+    this.resetLevelState();
+    this.hints.stop();
     for (const p of this.players) p.deactivate();
     this._activePlayers = [];
     this.assignments = [];
@@ -204,10 +259,11 @@ export class MatchScene {
   /** Benchmark: musuh selalu penuh, markas & pemain kebal, gelombang berhenti, koin tak terbatas. */
   setBenchmarkMode(on: boolean): void {
     this.benchmark = on;
-    this.enemies.fillToCapacity = on;
-    this.waves.paused = on || this.testMode;
+    this.enemies.setFill(on ? this.levels.enemyTypes : null);
+    this.levels.paused = on || this.testMode;
     this.markas.invulnerable = on;
     for (const p of this.players) p.invulnerable = on;
+    if (on) this.hints.stop();
   }
 
   // --- Mode uji skill (tanpa menunggu gelombang) ---
@@ -215,12 +271,15 @@ export class MatchScene {
   setTestMode(on: boolean): void {
     if (on === this.testMode) return;
     this.testMode = on;
-    this.waves.paused = on || this.benchmark;
+    this.levels.paused = on || this.benchmark;
     if (on) this.coinCount += GAME_RULES.testMode.startCoins;
   }
 
+  /** Munculkan sekelompok musuh; jenisnya bergiliran (Tikus, Hantu, Pencuri). */
   testSpawnGroup(): void {
-    this.enemies.spawnGroup(GAME_RULES.testMode.spawnGroup);
+    const type = REGULAR_ENEMIES[this.testTypeCursor++ % REGULAR_ENEMIES.length];
+    this.enemies.spawnGroup(type.id, GAME_RULES.testMode.spawnGroup);
+    this.announce(`Mode uji: ${type.name} muncul`);
   }
 
   /** Tambah koin dan habiskan semua cooldown. */
@@ -237,14 +296,16 @@ export class MatchScene {
   }
 
   update(dt: number): void {
-    // Saat kalah dunia membeku; hanya efek yang menyelesaikan animasinya.
-    if (this.state === "kalah") {
+    this.announceTimer = Math.max(0, this.announceTimer - dt);
+    if (this.announceTimer <= 0) this.announcement = null;
+    // Saat kalah/menang dunia membeku; hanya efek yang menyelesaikan animasinya.
+    if (this.state !== "main") {
       this.effects.update(dt);
       return;
     }
     if (this.benchmark) this.coinCount = BENCHMARK_COINS;
     this.elapsed += dt;
-    this.waves.update(dt);
+    this.levels.update(dt);
 
     for (const p of this._activePlayers) {
       const input = this.input.getState(p.slot);
@@ -261,11 +322,60 @@ export class MatchScene {
 
     this.projectiles.update(dt, this.enemies);
     this.structures.update(dt, this.enemies);
-    this.enemies.update(dt, this.markas, this._activePlayers, this.structures);
+    this.enemies.update(dt, this.markas, this._activePlayers, this.structures, this.coins);
     this.coins.update(dt, this._activePlayers);
     this.effects.update(dt);
+    this.hints.update(dt, {
+      time: this.elapsed,
+      wavesStarted: this.levels.wavesStarted,
+      coinCount: this.coinCount,
+      players: this._activePlayers,
+      enemies: this.enemies,
+      coins: this.coins,
+      markas: this.markas,
+      input: this.input,
+    });
 
-    if (this.markas.destroyed) this.state = "kalah";
+    if (this.markas.destroyed) {
+      this.state = "kalah";
+      this.hints.stop();
+    } else if (this.levels.complete && !this.testMode && !this.benchmark) {
+      // Combo dihitung di Tahap 6; sementara 0.
+      this.lastLevelScore = this.score.compute(this.level.name, this.markas.hp, 0, this.elapsed, this.level.parTimeSec);
+      this.score.commit(this.lastLevelScore);
+      this.state = "menang";
+      this.hints.stop();
+    }
+  }
+
+  private resetLevelState(): void {
+    this.state = "main";
+    this.coinCount = this.testMode ? GAME_RULES.testMode.startCoins : 0;
+    this.kills = 0;
+    this.elapsed = 0;
+    this.notices = [];
+    this.announcement = null;
+    this.lastLevelScore = null;
+    this.markas.reset();
+    this.enemies.reset();
+    this.projectiles.reset();
+    this.coins.reset();
+    this.effects.reset();
+    this.structures.reset();
+    this.levels.reset();
+    this.levels.paused = this.testMode || this.benchmark;
+    this.enemies.setFill(this.benchmark ? this.levels.enemyTypes : null);
+    for (const p of this._activePlayers) {
+      p.reset(PLAYER_SPAWNS[p.slot]);
+      this.abilityOf(p).reset();
+    }
+    if (this.level.tutorial && !this.benchmark) this.hints.start(this.level.hints, this._activePlayers);
+    else this.hints.stop();
+  }
+
+  private announce(text: string): void {
+    this.announcement = text;
+    this.announceTimer = ANNOUNCE_SEC;
   }
 
   /** Teman yang berdiri di dekat pemain jatuh mengisi bar revive; jika ditinggal, bar turun perlahan. */
@@ -273,13 +383,14 @@ export class MatchScene {
     const r = GAME_RULES.revive;
     for (const p of this._activePlayers) {
       if (!p.downed) continue;
-      const helped = this._activePlayers.some(
+      const helpers = this._activePlayers.filter(
         (q) => q !== p && !q.downed && Math.hypot(q.position.x - p.position.x, q.position.z - p.position.z) <= r.radius,
       );
-      const rate = (helped ? 1 : -r.decayPerSec) / r.durationSec;
+      const rate = (helpers.length > 0 ? 1 : -r.decayPerSec) / r.durationSec;
       p.reviveProgress = Math.max(0, Math.min(1, p.reviveProgress + rate * dt));
       if (p.reviveProgress >= 1) {
         p.revive(r.hpFraction);
+        for (const h of helpers) this.contributions.add(h.role.id, "revives");
         this.effects.areaBlast(p.position.x, p.position.z, r.radius, RING_COLORS.heal);
         this.effects.rise(p.position.x, 0.3, p.position.z, 10, FX_REVIVE, 0.6, 1, 0.14);
         this.notices.push({ slot: p.slot, text: "Bangkit lagi!", kind: "info" });

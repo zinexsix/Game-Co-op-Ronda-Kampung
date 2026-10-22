@@ -2,7 +2,7 @@ import { Engine, Matrix, SceneInstrumentation, Vector3 } from "@babylonjs/core";
 import "./style.css";
 import { SYSTEM_KEYS } from "./config/controls";
 import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualityLevel } from "./config/quality";
-import { ROLES, type RoleId } from "./data/types";
+import { FLOW_RULES, LEVELS, ROLES, type RoleId } from "./data/types";
 import { createArenaScene } from "./scenes/ArenaScene";
 import { MatchScene, type Assignment } from "./scenes/MatchScene";
 import { RoleSelectScene } from "./scenes/RoleSelectScene";
@@ -11,7 +11,7 @@ import { InputManager } from "./systems/InputManager";
 import { QualityManager } from "./systems/QualityManager";
 import { DebugOverlay, countRenderedTriangles, readDrawCalls, renderSize } from "./ui/DebugOverlay";
 import { Hud, type Projector } from "./ui/Hud";
-import { LoseScreen } from "./ui/LoseScreen";
+import { ChoiceScreen } from "./ui/ChoiceScreen";
 import { SettingsBar, toggleFullscreen } from "./ui/SettingsBar";
 
 const params = new URLSearchParams(location.search);
@@ -30,7 +30,12 @@ const engine = new Engine(canvas, false, {
 
 const gpuName = engine.getGlInfo().renderer;
 
-const arena = createArenaScene(engine, QUALITY_PRESETS.sedang.shadowMapSize);
+// Semua tata letak arena level yang bisa dimainkan dibangun di awal.
+const arena = createArenaScene(
+  engine,
+  QUALITY_PRESETS.sedang.shadowMapSize,
+  LEVELS.filter((l) => l.playable !== false).map((l) => l.arena),
+);
 const { scene } = arena;
 
 // --- Sistem permainan: semua aset dibuat di awal, lalu dipakai ulang ---
@@ -41,7 +46,7 @@ const match = new MatchScene(scene, arena, input);
 const quality = new QualityManager(engine, arena.sun, arena.shadows, initialQuality);
 quality.addDynamicCasters([
   ...match.players.flatMap((p) => p.meshes.slice(0, 3)),
-  match.enemies.renderMesh,
+  ...match.enemies.renderMeshes,
   ...match.structures.shadowMeshes,
 ]);
 
@@ -65,15 +70,7 @@ const project: Projector = (x, y, z) => {
 
 const hud = new Hud(uiRoot);
 const roleSelect = new RoleSelectScene(uiRoot, input, (assignments) => startMatch(assignments));
-const lose = new LoseScreen(
-  uiRoot,
-  input,
-  () => {
-    match.restart();
-    hud.show(match, project);
-  },
-  () => openRoleSelect(match.currentAssignments),
-);
+const choice = new ChoiceScreen(uiRoot, input, FLOW_RULES.screenInputDelaySec);
 
 const debug = new DebugOverlay(uiRoot);
 const status = document.createElement("div");
@@ -83,21 +80,82 @@ uiRoot.appendChild(status);
 type AppState = "pilihPeran" | "pertandingan";
 let appState: AppState = "pilihPeran";
 
-function startMatch(assignments: Assignment[]): void {
+/** Permainan baru dari level `levelIndex` (default Level 1). */
+function startMatch(assignments: Assignment[], levelIndex = 0): void {
   roleSelect.hide();
-  lose.hide();
-  match.start(assignments);
+  choice.hide();
+  match.startRun(assignments, levelIndex);
   hud.show(match, project);
   appState = "pertandingan";
+}
+
+/** Mainkan level `index`; `retry` = ulangi level yang sama (Coba Lagi). */
+function playLevel(index: number, retry = false): void {
+  if (retry) match.retryLevel();
+  else match.startLevel(index);
+  hud.show(match, project);
 }
 
 function openRoleSelect(previous: readonly Assignment[] = []): void {
   const keep = [...previous];
   match.stop();
   hud.hide();
-  lose.hide();
+  choice.hide();
   roleSelect.show(keep);
   appState = "pilihPeran";
+}
+
+const playerSlots = () => match.activePlayers.map((p) => p.slot);
+
+/** Layar Kalah: Coba Lagi mengulang level yang sama. */
+function showLose(): void {
+  const lv = match.levels;
+  choice.show(
+    {
+      variant: "kalah",
+      title: "KALAH",
+      subtitle: `Pos ronda jebol di Level ${match.level.id}: ${match.level.name}!`,
+      bodyHtml:
+        `Sampai gelombang <b>${lv.wavesStarted}/${lv.wavesTotal}</b> · <b>${match.kills}</b> musuh dikalahkan · ${Math.floor(match.elapsed)} dtk` +
+        `<div class="score-team">Skor tim: ${match.score.total}</div>`,
+      primaryLabel: "🔁 Coba Lagi",
+      secondaryLabel: "Ganti Peran",
+    },
+    playerSlots(),
+    () => playLevel(match.levelIndex, true),
+    () => openRoleSelect(match.currentAssignments),
+  );
+}
+
+/** Layar transisi antar level (skor sementara) atau layar selesai jika tidak ada level berikutnya. */
+function showWin(): void {
+  const s = match.lastLevelScore;
+  const next = match.nextLevelIndex;
+  const nextLevel = next !== null ? LEVELS[next] : null;
+  const upcoming = LEVELS.find((l, i) => i > match.levelIndex && l.playable === false);
+  const rows = s
+    ? `<table class="score-table">
+        <tr><td>Sisa HP pos ronda (${s.markasHp})</td><td class="num">${s.markasPoints}</td></tr>
+        <tr><td>Combo (${s.combos})</td><td class="num">${s.comboPoints}</td></tr>
+        <tr><td>Bonus waktu (${Math.floor(s.seconds)} dtk)</td><td class="num">${s.timeBonus}</td></tr>
+        <tr class="total"><td>Skor level</td><td class="num">${s.total}</td></tr>
+      </table>`
+    : "";
+  choice.show(
+    {
+      variant: "menang",
+      title: nextLevel ? `LEVEL ${match.level.id} SELESAI!` : "RONDA AMAN!",
+      subtitle: nextLevel
+        ? `Berikutnya: Level ${nextLevel.id} ${nextLevel.name} (${nextLevel.area})`
+        : `Semua level selesai${upcoming ? ` · Level ${upcoming.id} ${upcoming.name} menyusul` : ""}`,
+      bodyHtml: `${rows}<div class="score-team">Skor tim: ${match.score.total}</div>`,
+      primaryLabel: nextLevel ? `▶ Lanjut ke Level ${nextLevel.id}` : "🔁 Main Lagi dari Level 1",
+      secondaryLabel: "Ganti Peran",
+    },
+    playerSlots(),
+    () => (next !== null ? playLevel(next) : startMatch([...match.currentAssignments])),
+    () => openRoleSelect(match.currentAssignments),
+  );
 }
 
 // --- Benchmark: 4 pemain + musuh penuh + skill aktif ---
@@ -115,7 +173,9 @@ const benchmark = new Benchmark(
 
 function startBenchmark(order?: QualityLevel[]): void {
   if (benchmark.running) return;
-  startMatch(ROLES.map((r, slot) => ({ slot, roleId: r.id })));
+  // Benchmark di arena level yang sedang/akan dimainkan (?level=2 untuk arena Level 2).
+  const levelIndex = appState === "pertandingan" ? match.levelIndex : startLevelIndex;
+  startMatch(ROLES.map((r, slot) => ({ slot, roleId: r.id })), levelIndex);
   match.setBenchmarkMode(true);
   benchmark.start(order);
 }
@@ -160,13 +220,11 @@ scene.onBeforeRenderObservable.add(() => {
   }
   match.update(dt);
   hud.update(match, dt, project);
-  if (match.state === "kalah" && !lose.shown) {
-    lose.show(
-      { waves: match.waves.wave, kills: match.kills, coins: match.coinCount, seconds: match.elapsed },
-      match.activePlayers.map((p) => p.slot),
-    );
+  if (!choice.shown) {
+    if (match.state === "kalah") showLose();
+    else if (match.state === "menang") showWin();
   }
-  lose.update(dt);
+  choice.update(dt);
 });
 
 scene.onAfterRenderObservable.add(() => {
@@ -187,7 +245,8 @@ scene.onAfterRenderObservable.add(() => {
       projectiles: match.projectiles.activeCount,
       coinsOnGround: match.coins.activeCount,
       particles: match.effects.activeParticles,
-      enemyTriangles: match.enemies.modelTriangles,
+      enemyTriangles: Object.entries(match.enemies.modelTriangles).map(([id, n]) => `${id} ${n}`).join(" · ") + " segitiga",
+      notes: debugNotes(),
     },
     match.activePlayers,
     input,
@@ -200,6 +259,22 @@ window.addEventListener("resize", () => {
   arena.fitCamera();
 });
 
+/** Baris debug: level & kesulitan, lalu kontribusi per peran (untuk MVP Tahap 5). */
+function debugNotes(): string[] {
+  if (appState !== "pertandingan") return [];
+  const lv = match.levels;
+  const notes = [
+    `Level ${match.level.id} (${match.level.arena.id}) · t ${lv.time.toFixed(0)} dtk · gelombang ${lv.wavesStarted}/${lv.wavesTotal} · skor tim ${match.score.total}`,
+  ];
+  for (const p of match.activePlayers) {
+    const c = match.contributions.get(p.role.id);
+    notes.push(
+      `${p.role.name}: dmg ${Math.round(c.damage)} · kill ${c.kills} · blok ${c.blocked} · pancing ${c.lured} · heal ${Math.round(c.healed)} · buff ${c.buffs} · barikade ${c.barricades}/${c.barricadeAbsorbed} · jebakan ${c.trapsTriggered}/${c.trapStuns} · revive ${c.revives} · koin ${c.coins}`,
+    );
+  }
+  return notes;
+}
+
 function showBenchResults(results: BenchResult[]): void {
   const lines = results.map(
     (r) =>
@@ -211,24 +286,27 @@ function showBenchResults(results: BenchResult[]): void {
   (window as unknown as { __benchResult: BenchResult[] }).__benchResult = results;
 }
 
-// Info anggaran segitiga ke konsol (batas: karakter 800, musuh 300 untuk Tikus Raksasa).
+// Info anggaran segitiga ke konsol (batas PRD: karakter 800, musuh biasa 500, Tikus Raksasa 300).
 console.log(
   "Segitiga per karakter:",
   match.players.map((p) => `${p.role.name}=${p.triangleCount}`).join(", "),
-  `· Tikus Raksasa=${match.enemies.modelTriangles}`,
+  "· Musuh:",
+  JSON.stringify(match.enemies.modelTriangles),
 );
 
 // Akses dari konsol browser saat pengembangan (tidak ada di build pameran).
 if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>).__game = { match, input, engine, roleSelect, lose };
+  (window as unknown as Record<string, unknown>).__game = { match, input, engine, roleSelect, choice, arena };
 }
 
-// Untuk tes: ?roles=penyerang,penjaga langsung main (slot P1, P2, ... sesuai urutan).
+// Untuk tes: ?roles=penyerang,penjaga langsung main (slot P1, P2, ... sesuai urutan); ?level=2 mulai di Level 2.
+const levelParam = Number(params.get("level") ?? "1");
+const startLevelIndex = Math.max(0, LEVELS.findIndex((l) => l.id === levelParam && l.playable !== false));
 const quickRoles = (params.get("roles") ?? "")
   .split(",")
   .filter((id): id is RoleId => ROLES.some((r) => r.id === id));
 if (quickRoles.length > 0) {
-  startMatch(quickRoles.map((roleId, slot) => ({ slot, roleId })));
+  startMatch(quickRoles.map((roleId, slot) => ({ slot, roleId })), startLevelIndex);
   if (params.has("uji")) match.setTestMode(true); // ?roles=...&uji langsung ke mode uji
 } else openRoleSelect();
 

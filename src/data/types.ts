@@ -49,6 +49,9 @@ export interface RoleData {
   skills: [SkillData, SkillData];
 }
 
+/** Sasaran utama musuh: pos ronda, pemain terdekat, atau koin di tanah. */
+export type EnemyTarget = "markas" | "pemain" | "koin";
+
 export interface EnemyData {
   id: string;
   name: string;
@@ -56,7 +59,7 @@ export interface EnemyData {
   speed: number;
   color: string;
   size: number;
-  target: string;
+  target: EnemyTarget;
   /** Damage ke markas per serangan. */
   baseDamage: number;
   /** Damage ke pemain per gigitan. */
@@ -70,28 +73,69 @@ export interface EnemyData {
   barricadeDamage: number;
   /** 0-1: jika posisi musuh sejauh ini dari tengah barikade (relatif setengah lebar), ia memutar; selain itu menggigit. */
   barricadeBypass: number;
+  /** Menembus barikade (Hantu Iseng). */
+  passesBarricades?: boolean;
+  /** Pencuri: jumlah koin yang dicuri sebelum kabur. */
+  carryMax?: number;
+  /** Pencuri: pengali kecepatan saat kabur. */
+  fleeSpeedMult?: number;
+  /** Pengali lama efek Pancing (Pencuri mudah dipancing). */
+  lureMultiplier?: number;
   phases?: number;
 }
 
-export interface WaveData {
-  enemyType: string;
+/** Satu kelompok musuh dalam gelombang: muncul satu per satu dari titik bernama (bergiliran). */
+export interface SpawnGroupData {
+  enemy: string;
   count: number;
-  spawnInterval: number;
-  breakSec: number;
-  firstDelaySec: number;
-  spawnJitter: number;
-  spawnPoints: [number, number][];
+  interval: number;
+  points: string[];
+}
+
+export interface WaveData {
+  /** Detik sejak level mulai. */
+  at: number;
+  groups: SpawnGroupData[];
+}
+
+export interface HintData {
+  id: string;
+  text: string;
+  role?: RoleId;
+  skill?: 1 | 2;
 }
 
 export interface LevelData {
   id: number;
   name: string;
   area: string;
-  durationSec: number;
-  enemyTypes: string[];
-  waves?: number;
-  boss?: string;
+  /** false = belum bisa dimainkan (menyusul). */
+  playable?: boolean;
+  arena: { id: string; halfWidth: number; halfDepth: number };
+  /** Batas waktu untuk bonus waktu skor. */
+  parTimeSec: number;
   tutorial?: boolean;
+  spawnPoints: Record<string, [number, number]>;
+  waves: WaveData[];
+  hints?: HintData[];
+}
+
+export interface PlayerScaling {
+  count: number;
+  hp: number;
+}
+
+export interface ScoreRules {
+  markasHpPoints: number;
+  comboPoints: number;
+  timeBonusPerSec: number;
+}
+
+export interface FlowRules {
+  earlyNextWaveSec: number;
+  screenInputDelaySec: number;
+  hintSec: number;
+  hintGapSec: number;
 }
 
 export interface GameRules {
@@ -107,14 +151,24 @@ export const ROLES = rolesJson.roles as RoleData[];
 export const SPEED_CLASSES = rolesJson.speedClasses as Record<SpeedClass, number>;
 export const ENEMIES = enemiesJson.enemies as EnemyData[];
 export const MAX_ACTIVE_ENEMIES: number = enemiesJson.maxActive;
-export const LEVELS = levelsJson.levels as LevelData[];
-export const TEST_WAVE = levelsJson.testWave as WaveData;
+export const LEVELS = levelsJson.levels as unknown as LevelData[];
+export const PLAYER_SCALING = levelsJson.playerScaling as unknown as Record<string, PlayerScaling>;
+export const SCORE_RULES = levelsJson.score as ScoreRules;
+export const FLOW_RULES = levelsJson.flow as FlowRules;
+/** Musuh biasa yang punya model di Tahap 4 (boss menyusul di Tahap 5). */
+export const REGULAR_ENEMIES = ENEMIES.filter((e) => e.phases === undefined);
 export const GAME_RULES = gameJson as GameRules;
 
 export function getRole(id: RoleId): RoleData {
   const role = ROLES.find((r) => r.id === id);
   if (!role) throw new Error(`Peran tidak ditemukan: ${id}`);
   return role;
+}
+
+/** Pengali kesulitan untuk jumlah pemain manusia (dibatasi ke 2-4). */
+export function scalingFor(humans: number): PlayerScaling {
+  const n = Math.max(2, Math.min(4, humans));
+  return PLAYER_SCALING[String(n)];
 }
 
 export function getEnemy(id: string): EnemyData {

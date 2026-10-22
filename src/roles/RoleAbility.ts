@@ -1,6 +1,8 @@
 import type { SkillData } from "../data/types";
 import type { Markas } from "../entities/Markas";
 import type { Player } from "../entities/Player";
+import type { RoleId } from "../data/types";
+import type { ContributionStat } from "../systems/ContributionTracker";
 import type { Effects } from "../systems/Effects";
 import type { EnemyManager } from "../systems/EnemyManager";
 import type { PlayerInputState, PlayerPresses } from "../systems/InputManager";
@@ -22,6 +24,8 @@ export interface CombatContext {
   spendCoins(amount: number): boolean;
   /** Pesan singkat di kartu HUD pemain. kind "koin" juga membuat penghitung koin berkedip. */
   notify(player: Player, text: string, kind?: NoticeKind): void;
+  /** Catat kontribusi peran (untuk MVP). */
+  track(role: RoleId, stat: ContributionStat, amount?: number): void;
 }
 
 export type NoticeKind = "info" | "koin";

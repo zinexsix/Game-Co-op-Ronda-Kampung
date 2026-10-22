@@ -49,6 +49,8 @@ export class Hud {
   private readonly coinText: HTMLSpanElement;
   private readonly waveText: HTMLSpanElement;
   private readonly testBadge: HTMLDivElement;
+  private readonly levelText: HTMLSpanElement;
+  private readonly banner: HTMLDivElement;
   private readonly cardRow: HTMLDivElement;
   private readonly floatLayer: HTMLDivElement;
   private cards: PlayerCard[] = [];
@@ -57,6 +59,7 @@ export class Hud {
   private lastCoins = -1;
   private lastWave = "";
   private lastTestMode = false;
+  private lastBanner: string | null = null;
 
   constructor(parent: HTMLElement) {
     this.el = document.createElement("div");
@@ -70,11 +73,13 @@ export class Hud {
           <div class="base-bar"><div class="base-fill"></div><span class="base-text"></span></div>
         </div>
         <div class="hud-info">
+          <span class="level-info"></span>
           <span class="coin-count"></span>
           <span class="wave-info"></span>
         </div>
         <div class="test-badge" hidden>MODE UJI · ${SYSTEM_KEYS.testSpawn} munculkan tikus · ${SYSTEM_KEYS.testCoins} +koin & reset cooldown · ${SYSTEM_KEYS.testDown} jatuhkan pemain · ${SYSTEM_KEYS.toggleTestMode} keluar</div>
       </div>
+      <div class="hud-banner" hidden></div>
       <div class="player-cards"></div>`;
     parent.appendChild(this.el);
     this.basePanel = this.el.querySelector(".base-panel") as HTMLDivElement;
@@ -83,6 +88,8 @@ export class Hud {
     this.coinText = this.el.querySelector(".coin-count") as HTMLSpanElement;
     this.waveText = this.el.querySelector(".wave-info") as HTMLSpanElement;
     this.testBadge = this.el.querySelector(".test-badge") as HTMLDivElement;
+    this.levelText = this.el.querySelector(".level-info") as HTMLSpanElement;
+    this.banner = this.el.querySelector(".hud-banner") as HTMLDivElement;
     this.cardRow = this.el.querySelector(".player-cards") as HTMLDivElement;
     this.floatLayer = this.el.querySelector(".float-layer") as HTMLDivElement;
   }
@@ -96,6 +103,9 @@ export class Hud {
     this.lastBaseHits = match.markas.hitCount;
     this.lastCoins = -1;
     this.lastWave = "";
+    this.lastBanner = null;
+    this.banner.hidden = true;
+    this.levelText.textContent = `Level ${match.level.id} · ${match.level.name}`;
     this.el.hidden = false;
     this.update(match, 0, project);
   }
@@ -126,19 +136,27 @@ export class Hud {
       this.testBadge.hidden = !match.testMode;
     }
 
-    const w = match.waves;
-    const waveText = w.paused
-      ? match.testMode
-        ? `Gelombang berhenti · 🐀 ${match.enemies.activeCount}`
-        : `🐀 ${match.enemies.activeCount}`
-      : w.wave === 0
-        ? `Bersiap… ${Math.ceil(w.timer)}`
-        : w.phase === "jeda"
-          ? `Gelombang ${w.wave} selesai! Berikutnya ${Math.ceil(w.timer)} dtk`
-          : `Gelombang ${w.wave} · 🐀 ${match.enemies.activeCount + w.remainingToSpawn} tersisa`;
+    const lv = match.levels;
+    const foes = match.enemies.activeCount + lv.remainingToSpawn;
+    const next = lv.nextWaveIn;
+    let waveText: string;
+    if (lv.paused) waveText = match.testMode ? `Gelombang berhenti · Musuh ${foes}` : `Musuh ${foes}`;
+    else if (lv.wavesStarted === 0) waveText = `Bersiap… ${Math.ceil(next ?? 0)}`;
+    else if (foes === 0 && next !== null) waveText = `Gelombang ${lv.wavesStarted + 1}/${lv.wavesTotal} dalam ${Math.ceil(next)} dtk`;
+    else waveText = `Gelombang ${lv.wavesStarted}/${lv.wavesTotal} · Musuh ${foes}`;
     if (waveText !== this.lastWave) {
       this.lastWave = waveText;
       this.waveText.textContent = waveText;
+    }
+
+    const bannerText = match.bannerText;
+    if (bannerText !== this.lastBanner) {
+      this.lastBanner = bannerText;
+      this.banner.hidden = bannerText === null;
+      if (bannerText) {
+        this.banner.textContent = bannerText;
+        this.banner.animate([{ opacity: 0, transform: "translate(-50%, -8px)" }, { opacity: 1, transform: "translate(-50%, 0)" }], { duration: 220 });
+      }
     }
 
     for (const n of match.takeNotices()) {

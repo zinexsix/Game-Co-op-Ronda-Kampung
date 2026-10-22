@@ -12,6 +12,11 @@ export class Enemy {
   readonly velocity = new Vector3();
   yaw = 0;
   hp = 0;
+  maxHp = 0;
+  /** Pencuri: koin yang sedang dibawa. */
+  carried = 0;
+  /** Pencuri: sedang kabur ke tepi arena. */
+  fleeing = false;
   /** Hitung mundur ke serangan berikutnya (detik). */
   attackTimer = 0;
   /** Sisa waktu animasi "tersentak" setelah terkena serangan. */
@@ -31,10 +36,14 @@ export class Enemy {
     return (this.data?.size ?? 0.6) * 0.6;
   }
 
-  spawn(data: EnemyData, x: number, z: number): void {
+  /** Aktifkan dari pool. `hpMult` = pengali kesulitan (jumlah pemain). */
+  spawn(data: EnemyData, x: number, z: number, hpMult = 1): void {
     this.active = true;
     this.data = data;
-    this.hp = data.hp;
+    this.maxHp = Math.round(data.hp * hpMult);
+    this.hp = this.maxHp;
+    this.carried = 0;
+    this.fleeing = false;
     this.position.set(x, 0, z);
     this.velocity.setAll(0);
     this.yaw = Math.atan2(-x, -z);

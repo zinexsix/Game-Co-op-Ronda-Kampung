@@ -1,20 +1,11 @@
-import {
-  Color4,
-  Matrix,
-  Mesh,
-  MeshBuilder,
-  Quaternion,
-  StandardMaterial,
-  Color3,
-  VertexBuffer,
-  Vector3,
-  type Scene,
-} from "@babylonjs/core";
+import { Color3, Matrix, MeshBuilder, Quaternion, StandardMaterial, Vector3, type Mesh, type Scene } from "@babylonjs/core";
 import { Enemy } from "../entities/Enemy";
+import { buildEnemyModel, type EnemyModel } from "../entities/EnemyModels";
 import type { Markas } from "../entities/Markas";
 import type { DamageResult, Player } from "../entities/Player";
-import type { EnemyData } from "../data/types";
+import type { EnemyData, RoleId } from "../data/types";
 import { ARENA } from "../config/arena";
+import type { CoinManager } from "./CoinManager";
 import { distanceToBox, nearestOnObb, pushOutOfBox, pushOutOfCircle, toObbLocal } from "./Collision";
 import type { Barricade, StructureManager } from "./StructureManager";
 
@@ -26,33 +17,57 @@ const BITE_ANIM_SEC = 0.2;
 const BLOCK_DOT = 0.5;
 /** Jarak tambahan untuk mulai "melihat" barikade di depan. */
 const BARRICADE_LOOKAHEAD = 0.3;
-/** Ukuran acuan model tikus; model diskalakan ke `size` dari JSON. */
-const MODEL_REF_SIZE = 0.6;
+/** Pencuri tanpa koin incaran berkeliaran sejauh ini dari pos ronda. */
+const THIEF_LOITER_RADIUS = 6;
+/** Pencuri dianggap lolos jika sedekat ini dengan tepi arena saat kabur. */
+const ESCAPE_MARGIN = 0.4;
 /** Isi pool otomatis (benchmark): jeda antar munculnya musuh. */
 const FILL_SPAWN_INTERVAL = 0.08;
 const STARS_PER_ENEMY = 2;
 const STAR_ORBIT_SPEED = 6;
+const SPAWN_JITTER = 1.5;
 
 export type AttackTarget = "pemain" | "markas" | "barikade";
 
+export interface AttackInfo {
+  amount: number;
+  victim?: Player;
+  result?: DamageResult;
+}
+
 export interface EnemyEvents {
-  /** Musuh kalah (HP 0). */
-  onKilled: (e: Enemy) => void;
-  /** Musuh menyerang (untuk efek visual). `result` hanya untuk serangan ke pemain. */
-  onAttack: (x: number, z: number, target: AttackTarget, result?: DamageResult) => void;
+  /** Musuh kalah (HP 0). `source` = peran yang memberi pukulan terakhir. */
+  onKilled: (e: Enemy, source?: RoleId) => void;
+  /** Damage yang benar-benar masuk ke musuh (untuk kontribusi). */
+  onDamaged: (amount: number, source?: RoleId) => void;
+  /** Musuh menyerang (untuk efek visual & kontribusi blokir). */
+  onAttack: (x: number, z: number, target: AttackTarget, info: AttackInfo) => void;
+  /** Pencuri mengambil koin. */
+  onSteal: (x: number, z: number) => void;
+  /** Pencuri lolos di tepi arena membawa koin. */
+  onEscaped: (e: Enemy, coins: number) => void;
+}
+
+interface RenderBucket {
+  data: EnemyData;
+  model: EnemyModel;
+  buffer: Float32Array;
+  count: number;
 }
 
 /**
- * Pool musuh berkapasitas tetap + render via thin instances (1 draw call untuk semua musuh).
- * Musuh berjalan ke pos ronda dengan steering (seek + separation) lalu menyerangnya.
- * Reaksi: pemain yang menghalangi digigit; barikade diputari (dekat ujung) atau digigit (dekat tengah);
- * jebakan membuat stun; Pancing Penjaga mengganti sasaran ke Penjaga.
+ * Pool musuh berkapasitas tetap (batas musuh aktif bersama untuk semua jenis).
+ * Tiap jenis digambar dengan thin instances (1 draw call per jenis).
+ * Perilaku menurut `target` di enemies.json:
+ * - markas (Tikus): ke pos ronda dan menggigitnya; barikade diputari (dekat ujung) atau digigit (dekat tengah).
+ * - pemain (Hantu): mengejar pemain terdekat, menembus barikade.
+ * - koin (Pencuri): mengincar koin di tanah, setelah membawa cukup koin kabur ke tepi arena.
+ * Semua jenis: terhenti oleh jebakan (stun) dan bisa dipancing Penjaga.
  */
 export class EnemyManager {
   readonly pool: Enemy[];
-  private readonly mesh: Mesh;
+  private readonly buckets = new Map<string, RenderBucket>();
   private readonly starMesh: Mesh;
-  private readonly matrixBuffer: Float32Array;
   private readonly starBuffer: Float32Array;
   private readonly tmpMatrix = new Matrix();
   private readonly tmpQuat = new Quaternion();
@@ -61,27 +76,29 @@ export class EnemyManager {
   private readonly unitScale = new Vector3(1, 1, 1);
   private readonly identityQuat = Quaternion.Identity();
   private time = 0;
-  /** Jika true, pool otomatis diisi sampai penuh (benchmark beban maksimal). */
-  fillToCapacity = false;
+  private spawnPoints: [number, number][] = [[0, ARENA.halfDepth]];
+  /** Benchmark: jenis musuh yang dipakai mengisi pool. null = tidak mengisi otomatis. */
+  private fillTypes: string[] | null = null;
   private fillTimer = 0;
   private _activeCount = 0;
 
   constructor(
     scene: Scene,
     readonly capacity: number,
-    private readonly data: EnemyData,
-    private readonly spawnPoints: readonly [number, number][],
+    types: readonly EnemyData[],
     private readonly events: EnemyEvents,
   ) {
     this.pool = Array.from({ length: capacity }, () => new Enemy());
 
-    this.mesh = buildRatMesh(scene, data);
-    this.mesh.isPickable = false;
-    this.matrixBuffer = new Float32Array(capacity * 16);
-    this.mesh.thinInstanceSetBuffer("matrix", this.matrixBuffer, 16, false);
-    this.mesh.thinInstanceCount = 0;
-    // Posisi berubah tiap frame; lewati perhitungan bounding agar murah.
-    this.mesh.alwaysSelectAsActiveMesh = true;
+    for (const data of types) {
+      const model = buildEnemyModel(scene, data);
+      const buffer = new Float32Array(capacity * 16);
+      model.mesh.thinInstanceSetBuffer("matrix", buffer, 16, false);
+      model.mesh.thinInstanceCount = 0;
+      // Posisi berubah tiap frame; lewati perhitungan bounding agar murah.
+      model.mesh.alwaysSelectAsActiveMesh = true;
+      this.buckets.set(data.id, { data, model, buffer, count: 0 });
+    }
 
     // Bintang kecil berputar di atas kepala musuh yang terkena stun (20 segitiga per bintang).
     this.starMesh = MeshBuilder.CreateIcoSphere("stunStar", { radius: 0.12, subdivisions: 1, flat: true }, scene);
@@ -96,54 +113,78 @@ export class EnemyManager {
     this.starMesh.alwaysSelectAsActiveMesh = true;
   }
 
-  get renderMesh(): Mesh {
-    return this.mesh;
+  /** Mesh semua jenis musuh (untuk bayangan). */
+  get renderMeshes(): Mesh[] {
+    return [...this.buckets.values()].map((b) => b.model.mesh);
   }
 
   get activeCount(): number {
     return this._activeCount;
   }
 
-  get modelTriangles(): number {
-    return this.mesh.getTotalIndices() / 3;
+  /** Jumlah musuh aktif per jenis. */
+  countOf(typeId: string): number {
+    return this.buckets.get(typeId)?.count ?? 0;
   }
 
-  /** Munculkan musuh di titik (x, z); null jika batas musuh aktif tercapai. */
-  spawnAt(x: number, z: number): Enemy | null {
+  /** Segitiga model per jenis (cek anggaran poligon). */
+  get modelTriangles(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const [id, b] of this.buckets) out[id] = b.model.mesh.getTotalIndices() / 3;
+    return out;
+  }
+
+  /** Titik muncul arena aktif (dipakai mode uji dan benchmark). */
+  setSpawnPoints(points: [number, number][]): void {
+    if (points.length > 0) this.spawnPoints = points;
+  }
+
+  /** Benchmark: jaga musuh aktif selalu penuh dengan jenis-jenis ini (null = mati). */
+  setFill(types: string[] | null): void {
+    this.fillTypes = types;
+  }
+
+  /** Munculkan musuh jenis `typeId` di (x, z); null jika batas musuh aktif tercapai. */
+  spawnAt(typeId: string, x: number, z: number, hpMult = 1): Enemy | null {
+    const bucket = this.buckets.get(typeId);
+    if (!bucket) throw new Error(`Jenis musuh tidak punya model: ${typeId}`);
     const e = this.pool.find((p) => !p.active);
     if (!e) return null;
-    e.spawn(this.data, x, z);
+    e.spawn(bucket.data, x, z, hpMult);
     this._activeCount++;
     return e;
   }
 
   /** Munculkan sekelompok musuh di titik muncul acak (mode uji). */
-  spawnGroup(count: number): number {
+  spawnGroup(typeId: string, count: number): number {
     const [x, z] = this.spawnPoints[Math.floor(Math.random() * this.spawnPoints.length)];
     let n = 0;
-    for (let i = 0; i < count; i++) if (this.spawnAt(x + (Math.random() - 0.5) * 2, z + (Math.random() - 0.5) * 2)) n++;
+    for (let i = 0; i < count; i++) {
+      if (this.spawnAt(typeId, x + (Math.random() - 0.5) * SPAWN_JITTER, z + (Math.random() - 0.5) * SPAWN_JITTER)) n++;
+    }
     return n;
   }
 
-  /** Beri damage; mengembalikan true jika musuh kalah karenanya. */
-  damage(e: Enemy, amount: number): boolean {
+  /** Beri damage; mengembalikan true jika musuh kalah karenanya. `source` = peran penyerang. */
+  damage(e: Enemy, amount: number, source?: RoleId): boolean {
     if (!e.active) return false;
+    const dealt = Math.min(amount, e.hp);
     e.hp -= amount;
     e.hitTimer = HIT_ANIM_SEC;
+    this.events.onDamaged(dealt, source);
     if (e.hp > 0) return false;
-    e.despawn();
-    this._activeCount--;
-    this.events.onKilled(e);
+    this.remove(e);
+    this.events.onKilled(e, source);
     return true;
   }
 
   /** Damage ke semua musuh dalam radius. Mengembalikan jumlah musuh yang terkena. */
-  damageInRadius(x: number, z: number, radius: number, amount: number): number {
+  damageInRadius(x: number, z: number, radius: number, amount: number, source?: RoleId): number {
     let hit = 0;
     for (const e of this.pool) {
       if (!e.active || !this.within(e, x, z, radius)) continue;
       hit++;
-      this.damage(e, amount);
+      this.damage(e, amount, source);
     }
     return hit;
   }
@@ -151,6 +192,13 @@ export class EnemyManager {
   /** true jika ada musuh aktif dalam radius (opsional: hanya yang belum stun). */
   anyWithin(x: number, z: number, radius: number, onlyUnstunned: boolean): boolean {
     return this.pool.some((e) => e.active && !(onlyUnstunned && e.stunned) && this.within(e, x, z, radius));
+  }
+
+  /** Jumlah musuh aktif dalam radius. */
+  countWithin(x: number, z: number, radius: number): number {
+    let n = 0;
+    for (const e of this.pool) if (e.active && this.within(e, x, z, radius)) n++;
+    return n;
   }
 
   /** Stun semua musuh dalam radius. Mengembalikan jumlahnya. */
@@ -165,13 +213,13 @@ export class EnemyManager {
     return n;
   }
 
-  /** Pancing: musuh dalam radius mengejar `player` selama `duration` detik. */
+  /** Pancing: musuh dalam radius mengejar `player` (Pencuri lebih lama, lihat lureMultiplier). */
   lureWithin(x: number, z: number, radius: number, player: Player, duration: number): number {
     let n = 0;
     for (const e of this.pool) {
       if (!e.active || !this.within(e, x, z, radius)) continue;
       e.lureTarget = player;
-      e.lureTimer = duration;
+      e.lureTimer = duration * (e.data?.lureMultiplier ?? 1);
       n++;
     }
     return n;
@@ -206,18 +254,21 @@ export class EnemyManager {
   reset(): void {
     for (const e of this.pool) e.despawn();
     this._activeCount = 0;
-    this.mesh.thinInstanceCount = 0;
+    for (const b of this.buckets.values()) {
+      b.count = 0;
+      b.model.mesh.thinInstanceCount = 0;
+    }
     this.starMesh.thinInstanceCount = 0;
   }
 
-  update(dt: number, markas: Markas, players: readonly Player[], structures: StructureManager): void {
+  update(dt: number, markas: Markas, players: readonly Player[], structures: StructureManager, coins: CoinManager): void {
     this.time += dt;
-    if (this.fillToCapacity) this.fill(dt);
+    if (this.fillTypes) this.fill(dt, this.fillTypes);
 
     const box = markas.box;
     for (const e of this.pool) {
-      if (!e.active) continue;
-      const d = e.data ?? this.data;
+      if (!e.active || !e.data) continue;
+      const d = e.data;
       e.attackTimer -= dt;
       e.hitTimer = Math.max(0, e.hitTimer - dt);
       e.biteTimer = Math.max(0, e.biteTimer - dt);
@@ -232,28 +283,48 @@ export class EnemyManager {
         continue;
       }
 
-      // Tujuan: Penjaga yang memancing, atau pos ronda.
+      // --- Tujuan gerak ---
       const lure = e.lureTarget;
-      const tx = lure ? lure.position.x : box.cx;
-      const tz = lure ? lure.position.z : box.cz;
+      let chase: Player | null = lure;
+      let tx = box.cx;
+      let tz = box.cz;
+      let speed = d.speed;
+      if (lure) {
+        tx = lure.position.x;
+        tz = lure.position.z;
+      } else if (d.target === "pemain") {
+        chase = nearestPlayer(e, players);
+        if (chase) {
+          tx = chase.position.x;
+          tz = chase.position.z;
+        }
+      } else if (d.target === "koin") {
+        const goal = this.thiefGoal(e, d, coins);
+        if (!e.active) continue; // lolos di tepi arena
+        tx = goal.x;
+        tz = goal.z;
+        if (e.fleeing) speed *= d.fleeSpeedMult ?? 1;
+      }
       let dx = tx - e.position.x;
       let dz = tz - e.position.z;
       const dist = Math.hypot(dx, dz) || 1;
       dx /= dist;
       dz /= dist;
 
-      // Sasaran serang. Prioritas: pemain yang menghalangi / pemancing > barikade > markas.
+      // --- Sasaran serang. Prioritas: pemain di jangkauan (yang dikejar lebih dulu) > barikade > markas ---
       let victim: Player | null = null;
-      for (const p of players) {
-        if (!p.active || p.downed) continue;
-        const gap = Math.hypot(p.position.x - e.position.x, p.position.z - e.position.z) - p.radius - e.radius;
-        if (gap <= d.attackRange) {
-          victim = p;
-          if (p === lure) break;
+      if (d.playerDamage > 0) {
+        for (const p of players) {
+          if (!p.active || p.downed) continue;
+          const gap = Math.hypot(p.position.x - e.position.x, p.position.z - e.position.z) - p.radius - e.radius;
+          if (gap <= d.attackRange) {
+            victim = p;
+            if (p === chase) break;
+          }
         }
       }
       let wall: Barricade | null = null;
-      if (!victim) {
+      if (!victim && !d.passesBarricades) {
         const reaction = this.reactToBarricades(e, d, structures, dx, dz);
         if (reaction.wall) wall = reaction.wall;
         else if (reaction.steer) {
@@ -261,10 +332,12 @@ export class EnemyManager {
           dz = reaction.steer.z;
         }
       }
-      const atMarkas = !lure && !victim && !wall && distanceToBox(e.position.x, e.position.z, box) - e.radius <= d.attackRange;
+      const atMarkas =
+        !chase && !victim && !wall && d.target === "markas" && d.baseDamage > 0 &&
+        distanceToBox(e.position.x, e.position.z, box) - e.radius <= d.attackRange;
       const attacking = victim !== null || wall !== null || atMarkas;
 
-      // Steering: seek (berhenti jika sedang menyerang) + separation antar musuh.
+      // --- Steering: seek (berhenti jika sedang menyerang) + separation antar musuh ---
       if (attacking) {
         dx = 0;
         dz = 0;
@@ -283,17 +356,17 @@ export class EnemyManager {
           sz += (oz / dd) * (1 - dd / minD);
         }
       }
-      const desiredX = (dx + sx * SEPARATION_WEIGHT) * d.speed;
-      const desiredZ = (dz + sz * SEPARATION_WEIGHT) * d.speed;
+      const desiredX = (dx + sx * SEPARATION_WEIGHT) * speed;
+      const desiredZ = (dz + sz * SEPARATION_WEIGHT) * speed;
       const k = Math.min(1, STEER_RATE * dt);
       e.velocity.x += (desiredX - e.velocity.x) * k;
       e.velocity.z += (desiredZ - e.velocity.z) * k;
       e.position.x += e.velocity.x * dt;
       e.position.z += e.velocity.z * dt;
 
-      // Tabrakan: musuh tidak masuk ke pos ronda / barikade / tubuh pemain / keluar arena.
+      // Tabrakan: pos ronda, barikade (kecuali hantu), tubuh pemain, batas arena.
       pushOutOfBox(e, box);
-      structures.pushOut(e);
+      if (!d.passesBarricades) structures.pushOut(e);
       for (const p of players) if (p.active) pushOutOfCircle(e, p);
       e.position.x = Math.max(-ARENA.halfWidth, Math.min(ARENA.halfWidth, e.position.x));
       e.position.z = Math.max(-ARENA.halfDepth, Math.min(ARENA.halfDepth, e.position.z));
@@ -313,13 +386,13 @@ export class EnemyManager {
         const fz = e.position.z + Math.cos(e.yaw) * e.radius;
         if (victim) {
           const result = victim.takeDamage(d.playerDamage, e.position.x, e.position.z);
-          if (result !== "diabaikan") this.events.onAttack(fx, fz, "pemain", result);
+          if (result !== "diabaikan") this.events.onAttack(fx, fz, "pemain", { amount: d.playerDamage, victim, result });
         } else if (wall) {
           structures.damageBarricade(wall, d.barricadeDamage);
-          this.events.onAttack(fx, fz, "barikade");
+          this.events.onAttack(fx, fz, "barikade", { amount: d.barricadeDamage });
         } else {
           markas.damage(d.baseDamage);
-          this.events.onAttack(fx, fz, "markas");
+          this.events.onAttack(fx, fz, "markas", { amount: d.baseDamage });
         }
       }
     }
@@ -328,8 +401,50 @@ export class EnemyManager {
   }
 
   /**
+   * Pencuri: incar koin terdekat dan ambil saat menyentuhnya; setelah membawa cukup koin
+   * (atau koin habis padahal sudah membawa) kabur ke tepi terdekat. Lolos = koin hilang.
+   */
+  private thiefGoal(e: Enemy, d: EnemyData, coins: CoinManager): { x: number; z: number } {
+    const carryMax = d.carryMax ?? 1;
+    if (!e.fleeing) {
+      const coin = coins.nearest(e.position.x, e.position.z);
+      if (coin) {
+        const reach = e.radius + coins.pickupRadius;
+        if (Math.hypot(coin.x - e.position.x, coin.z - e.position.z) <= reach && coins.take(coin.index)) {
+          e.carried++;
+          this.events.onSteal(coin.x, coin.z);
+          if (e.carried >= carryMax) e.fleeing = true;
+        }
+        if (!e.fleeing) return coin;
+      } else if (e.carried > 0) {
+        e.fleeing = true;
+      } else {
+        // Belum ada koin: berkeliaran di sekitar pos ronda menunggu koin jatuh.
+        const a = Math.atan2(e.position.z, e.position.x) + 0.6;
+        return { x: Math.cos(a) * THIEF_LOITER_RADIUS, z: Math.sin(a) * THIEF_LOITER_RADIUS };
+      }
+    }
+    // Kabur ke tepi arena terdekat.
+    const hw = ARENA.halfWidth;
+    const hd = ARENA.halfDepth;
+    const p = e.position;
+    const toEdge = [hw - p.x, hw + p.x, hd - p.z, hd + p.z];
+    const side = toEdge.indexOf(Math.min(...toEdge));
+    if (toEdge[side] <= ESCAPE_MARGIN) {
+      const carried = e.carried;
+      this.remove(e);
+      this.events.onEscaped(e, carried);
+      return { x: p.x, z: p.z };
+    }
+    if (side === 0) return { x: hw + 1, z: p.z };
+    if (side === 1) return { x: -hw - 1, z: p.z };
+    if (side === 2) return { x: p.x, z: hd + 1 };
+    return { x: p.x, z: -hd - 1 };
+  }
+
+  /**
    * Barikade di depan musuh: jika musuh dekat ujung barikade ia memutar (arah menyusuri barikade),
-   * jika dekat tengah ia menggigit barikade sampai hancur.
+   * jika dekat tengah ia menggigit barikade sampai hancur. Musuh tanpa damage barikade selalu memutar.
    */
   private reactToBarricades(
     e: Enemy, d: EnemyData, structures: StructureManager, dirX: number, dirZ: number,
@@ -344,7 +459,8 @@ export class EnemyManager {
       const len = Math.hypot(vx, vz) || 1;
       if ((vx * dirX + vz * dirZ) / len < BLOCK_DOT) continue; // barikade tidak di jalur
       const { u } = toObbLocal(e.position.x, e.position.z, b);
-      if (d.barricadeBypass > 0 && Math.abs(u) >= b.halfX * d.barricadeBypass) {
+      const canBite = d.barricadeDamage > 0;
+      if (!canBite || (d.barricadeBypass > 0 && Math.abs(u) >= b.halfX * d.barricadeBypass)) {
         // Memutar lewat ujung terdekat.
         const s = Math.sign(u) || 1;
         return { steer: { x: b.cos * s, z: b.sin * s } };
@@ -354,6 +470,11 @@ export class EnemyManager {
     return {};
   }
 
+  private remove(e: Enemy): void {
+    e.despawn();
+    this._activeCount--;
+  }
+
   private within(e: Enemy, x: number, z: number, radius: number): boolean {
     const r = radius + e.radius;
     const dx = e.position.x - x;
@@ -361,120 +482,74 @@ export class EnemyManager {
     return dx * dx + dz * dz <= r * r;
   }
 
-  /** Benchmark: jaga jumlah musuh aktif tetap di batas maksimal. */
-  private fill(dt: number): void {
+  /** Benchmark: jaga jumlah musuh aktif tetap di batas maksimal (jenis bergiliran). */
+  private fill(dt: number, types: string[]): void {
     this.fillTimer -= dt;
     while (this.fillTimer <= 0 && this._activeCount < this.capacity) {
       this.fillTimer += FILL_SPAWN_INTERVAL;
       const [x, z] = this.spawnPoints[Math.floor(Math.random() * this.spawnPoints.length)];
-      this.spawnAt(x + (Math.random() - 0.5) * 2, z + (Math.random() - 0.5) * 2);
+      const type = types[this._activeCount % types.length];
+      this.spawnAt(type, x + (Math.random() - 0.5) * 2, z + (Math.random() - 0.5) * 2);
     }
     this.fillTimer = Math.max(this.fillTimer, 0);
   }
 
-  /** Tulis matriks musuh aktif (dan bintang stun) secara rapat ke buffer thin instance. */
+  /** Tulis matriks musuh aktif (per jenis) dan bintang stun secara rapat ke buffer thin instance. */
   private writeInstances(): void {
-    let n = 0;
+    for (const b of this.buckets.values()) b.count = 0;
     let stars = 0;
-    const headY = this.data.size * 1.1;
     for (const e of this.pool) {
-      if (!e.active) continue;
-      const moving = Math.min(1, Math.hypot(e.velocity.x, e.velocity.z) / this.data.speed);
-      const bob = Math.abs(Math.sin(this.time * 14 + e.bobPhase)) * 0.08 * moving;
-      // Tersentak (melebar) saat terkena, maju sedikit saat menggigit, bergoyang pusing saat stun.
+      if (!e.active || !e.data) continue;
+      const b = this.buckets.get(e.data.id);
+      if (!b) continue;
+      const m = b.model;
+      const moving = Math.min(1, Math.hypot(e.velocity.x, e.velocity.z) / e.data.speed);
+      const bob =
+        m.bob === "melayang"
+          ? Math.sin(this.time * 3 + e.bobPhase) * 0.12
+          : Math.abs(Math.sin(this.time * 14 + e.bobPhase)) * 0.08 * moving;
+      // Tersentak (melebar) saat terkena, maju sedikit saat menyerang, bergoyang pusing saat stun.
       const hit = e.hitTimer / HIT_ANIM_SEC;
       const lunge = Math.sin((e.biteTimer / BITE_ANIM_SEC) * Math.PI) * 0.25;
       const dizzy = e.stunned ? Math.sin(this.time * 10 + e.bobPhase) * 0.35 : 0;
       this.tmpScale.set(1 + hit * 0.35, (1 - hit * 0.25) * (e.stunned ? 0.85 : 1), 1 + hit * 0.1);
-      this.tmpPos.set(e.position.x + Math.sin(e.yaw) * lunge, bob, e.position.z + Math.cos(e.yaw) * lunge);
+      this.tmpPos.set(e.position.x + Math.sin(e.yaw) * lunge, m.baseY + bob, e.position.z + Math.cos(e.yaw) * lunge);
       Quaternion.RotationYawPitchRollToRef(e.yaw + dizzy, 0, dizzy * 0.5, this.tmpQuat);
       Matrix.ComposeToRef(this.tmpScale, this.tmpQuat, this.tmpPos, this.tmpMatrix);
-      this.tmpMatrix.copyToArray(this.matrixBuffer, n * 16);
-      n++;
+      this.tmpMatrix.copyToArray(b.buffer, b.count * 16);
+      b.count++;
 
       if (e.stunned) {
         for (let s = 0; s < STARS_PER_ENEMY; s++) {
           const a = this.time * STAR_ORBIT_SPEED + e.bobPhase + (s * Math.PI * 2) / STARS_PER_ENEMY;
-          this.tmpPos.set(e.position.x + Math.cos(a) * 0.35, headY, e.position.z + Math.sin(a) * 0.35);
+          this.tmpPos.set(e.position.x + Math.cos(a) * 0.35, m.headY + m.baseY, e.position.z + Math.sin(a) * 0.35);
           Matrix.ComposeToRef(this.unitScale, this.identityQuat, this.tmpPos, this.tmpMatrix);
           this.tmpMatrix.copyToArray(this.starBuffer, stars * 16);
           stars++;
         }
       }
     }
-    this.mesh.thinInstanceCount = n;
-    this.mesh.thinInstanceBufferUpdated("matrix");
+    for (const b of this.buckets.values()) {
+      const mesh = b.model.mesh;
+      mesh.thinInstanceCount = b.count;
+      if (b.count > 0) mesh.thinInstanceBufferUpdated("matrix");
+    }
     this.starMesh.thinInstanceCount = stars;
     if (stars > 0) this.starMesh.thinInstanceBufferUpdated("matrix");
   }
 }
 
-/**
- * Model Tikus Raksasa low-poly (< 300 segitiga): badan, moncong, telinga, mata merah,
- * ekor, dan 4 kaki. Digabung jadi satu mesh berwarna per-vertex (1 material, 1 draw call).
- */
-function buildRatMesh(scene: Scene, data: EnemyData): Mesh {
-  const fur = Color4.FromHexString(data.color + "ff");
-  const dark = new Color4(fur.r * 0.6, fur.g * 0.6, fur.b * 0.6, 1);
-  const pink = new Color4(0.9, 0.55, 0.6, 1);
-  const eye = new Color4(1, 0.1, 0.05, 1);
-  const parts: Mesh[] = [];
-  const part = (m: Mesh, color: Color4) => {
-    const count = m.getTotalVertices();
-    const colors = new Float32Array(count * 4);
-    for (let i = 0; i < count; i++) colors.set([color.r, color.g, color.b, color.a], i * 4);
-    m.setVerticesData(VertexBuffer.ColorKind, colors);
-    parts.push(m);
-    return m;
-  };
-
-  const body = part(
-    MeshBuilder.CreateIcoSphere("ratBody", { radiusX: 0.32, radiusY: 0.25, radiusZ: 0.46, subdivisions: 2, flat: true }, scene),
-    fur,
-  );
-  body.position.set(0, 0.3, 0);
-
-  const snout = part(
-    MeshBuilder.CreateCylinder("ratSnout", { diameterTop: 0, diameterBottom: 0.36, height: 0.42, tessellation: 6 }, scene),
-    fur,
-  );
-  snout.rotation.x = Math.PI / 2;
-  snout.position.set(0, 0.34, 0.56);
-
-  const nose = part(MeshBuilder.CreateBox("ratNose", { size: 0.08 }, scene), pink);
-  nose.position.set(0, 0.34, 0.77);
-
-  for (const side of [-1, 1]) {
-    const ear = part(MeshBuilder.CreateBox("ratEar", { width: 0.18, height: 0.18, depth: 0.04 }, scene), pink);
-    ear.position.set(side * 0.14, 0.55, 0.36);
-    ear.rotation.z = side * 0.3;
-    const eyeMesh = part(MeshBuilder.CreateBox("ratEye", { size: 0.07 }, scene), eye);
-    eyeMesh.position.set(side * 0.1, 0.44, 0.6);
+/** Pemain aktif (tidak jatuh) terdekat. */
+function nearestPlayer(e: Enemy, players: readonly Player[]): Player | null {
+  let best: Player | null = null;
+  let bestD = Infinity;
+  for (const p of players) {
+    if (!p.active || p.downed) continue;
+    const d = Math.hypot(p.position.x - e.position.x, p.position.z - e.position.z);
+    if (d < bestD) {
+      bestD = d;
+      best = p;
+    }
   }
-
-  const tail = part(
-    MeshBuilder.CreateCylinder("ratTail", { diameterTop: 0.02, diameterBottom: 0.07, height: 0.7, tessellation: 4 }, scene),
-    pink,
-  );
-  tail.rotation.x = -Math.PI / 2 + 0.35;
-  tail.position.set(0, 0.26, -0.75);
-
-  for (const [x, z] of [[-0.17, 0.22], [0.17, 0.22], [-0.17, -0.22], [0.17, -0.22]]) {
-    const leg = part(MeshBuilder.CreateBox("ratLeg", { width: 0.1, height: 0.18, depth: 0.12 }, scene), dark);
-    leg.position.set(x, 0.09, z);
-  }
-
-  const merged = Mesh.MergeMeshes(parts, true, true);
-  if (!merged) throw new Error("Gagal membuat model tikus");
-  merged.name = `enemy_${data.id}`;
-  merged.hasVertexAlpha = false; // warna vertex opak; jangan masuk antrean transparan
-  const k = data.size / MODEL_REF_SIZE;
-  merged.bakeTransformIntoVertices(Matrix.Scaling(k, k, k));
-
-  const mat = new StandardMaterial(`enemyMat_${data.id}`, scene);
-  mat.diffuseColor = Color3.White(); // warna dari vertex color
-  mat.emissiveColor = new Color3(0.3, 0.3, 0.3); // tetap terbaca di malam hari
-  mat.specularColor = Color3.Black();
-  merged.material = mat;
-  return merged;
+  return best;
 }

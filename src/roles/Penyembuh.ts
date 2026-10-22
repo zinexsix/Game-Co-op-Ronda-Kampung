@@ -56,6 +56,7 @@ export class PenyembuhAbility implements RoleAbility {
       for (const p of ctx.players) {
         if (p.downed) continue;
         p.applySpeedBuff(this.buffBonus, this.buffDuration);
+        ctx.track(player.role.id, "buffs");
         ctx.effects.areaBlast(p.position.x, p.position.z, HEAL_RING_RADIUS, RING_COLORS.buff);
         ctx.effects.rise(p.position.x, 0.3, p.position.z, 6, FX_BUFF, 0.6, 0.8, 0.12);
       }
@@ -83,12 +84,12 @@ export class PenyembuhAbility implements RoleAbility {
     if (!best) return false;
 
     if (best === "markas") {
-      m.heal(this.healMarkas);
+      ctx.track(self.role.id, "healed", m.heal(this.healMarkas));
       const b = m.box;
       ctx.effects.areaBlast(b.cx, b.cz, b.halfX + HEAL_RING_RADIUS, RING_COLORS.heal);
       ctx.effects.rise(b.cx, 0.5, b.cz, 12, FX_HEAL, b.halfX, 1, 0.16);
     } else {
-      best.heal(this.healPlayer);
+      ctx.track(self.role.id, "healed", best.heal(this.healPlayer));
       ctx.effects.areaBlast(best.position.x, best.position.z, HEAL_RING_RADIUS, RING_COLORS.heal);
       ctx.effects.rise(best.position.x, 0.3, best.position.z, 8, FX_HEAL, 0.5, 0.9, 0.14);
     }

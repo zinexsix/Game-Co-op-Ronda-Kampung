@@ -1,5 +1,6 @@
 import { Color3, Matrix, MeshBuilder, Quaternion, StandardMaterial, Vector3, type Mesh, type Scene } from "@babylonjs/core";
 import { ARENA } from "../config/arena";
+import type { RoleId } from "../data/types";
 import type { Enemy } from "../entities/Enemy";
 import type { EnemyManager } from "./EnemyManager";
 
@@ -16,6 +17,7 @@ interface Projectile {
   travelled: number;
   range: number;
   damage: number;
+  source?: RoleId;
 }
 
 /** Pool proyektil lurus (thin instances, 1 draw call). Kena musuh pertama di jalurnya; melewati pos ronda (bangunan terbuka). */
@@ -53,7 +55,7 @@ export class ProjectileManager {
     return this.mesh.thinInstanceCount;
   }
 
-  fire(x: number, z: number, dirX: number, dirZ: number, speed: number, range: number, damage: number): void {
+  fire(x: number, z: number, dirX: number, dirZ: number, speed: number, range: number, damage: number, source?: RoleId): void {
     const p = this.pool.find((q) => !q.active);
     if (!p) return;
     p.active = true;
@@ -65,6 +67,7 @@ export class ProjectileManager {
     p.travelled = 0;
     p.range = range;
     p.damage = damage;
+    p.source = source;
   }
 
   update(dt: number, enemies: EnemyManager): void {
@@ -79,7 +82,7 @@ export class ProjectileManager {
       if (hit) {
         const hx = hit.position.x;
         const hz = hit.position.z;
-        const killed = enemies.damage(hit, p.damage);
+        const killed = enemies.damage(hit, p.damage, p.source);
         this.onHit(hit, hx, hz, killed);
         p.active = false;
         continue;

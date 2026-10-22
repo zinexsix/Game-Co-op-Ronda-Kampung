@@ -81,7 +81,8 @@ export class PenjagaAbility implements RoleAbility {
         lure.cooldownLeft = this.lureCooldown;
         this.lureLeft = this.lureDuration;
         const { x, z } = player.position;
-        ctx.enemies.lureWithin(x, z, this.lureRadius, player, this.lureDuration);
+        const lured = ctx.enemies.lureWithin(x, z, this.lureRadius, player, this.lureDuration);
+        ctx.track(player.role.id, "lured", lured);
         ctx.effects.areaBlast(x, z, this.lureRadius, RING_COLORS.lure);
       }
     } else {

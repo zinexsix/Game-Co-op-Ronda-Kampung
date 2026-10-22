@@ -596,50 +596,123 @@ kbd {
   background: #4ade80;
 }
 
-/* ---------- Layar Kalah ---------- */
-.lose-screen {
+/* Atribut hidden harus menang atas display:flex di atas. */
+[hidden] {
+  display: none !important;
+}
+
+.level-info {
+  color: #c4b5fd;
+}
+
+/* Petunjuk tutorial / pengumuman di atas tengah layar. */
+.hud-banner {
+  position: absolute;
+  top: 160px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 80vw;
+  background: rgba(15, 23, 42, 0.92);
+  border: 3px solid #facc15;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 800;
+  padding: 10px 22px;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 4px 0 #a16207;
+}
+
+/* ---------- Layar pilihan (kalah / transisi level / selesai) ---------- */
+.choice-screen {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(40, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.5);
   pointer-events: auto;
 }
 
-.lose-box {
+.choice-box {
   text-align: center;
   background: rgba(15, 23, 42, 0.95);
-  border: 4px solid #ef4444;
+  border: 4px solid #64748b;
   border-radius: 16px;
-  padding: 28px 40px;
+  padding: 26px 40px;
+  min-width: 520px;
 }
 
-.lose-title {
-  font-size: 72px;
+.choice-box.kalah {
+  border-color: #ef4444;
+}
+
+.choice-box.menang {
+  border-color: #4ade80;
+}
+
+.choice-title {
+  font-size: 64px;
   font-weight: 900;
+  letter-spacing: 4px;
+}
+
+.choice-box.kalah .choice-title {
   color: #ef4444;
-  letter-spacing: 6px;
 }
 
-.lose-sub {
+.choice-box.menang .choice-title {
+  color: #4ade80;
+}
+
+.choice-sub {
   font-size: 24px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
-.lose-stats {
+.choice-body {
   font-size: 18px;
   color: #cbd5e1;
   margin-bottom: 20px;
 }
 
-.lose-buttons {
+.score-table {
+  margin: 0 auto 6px;
+  border-collapse: collapse;
+  font-size: 20px;
+}
+
+.score-table td {
+  padding: 3px 12px;
+  text-align: left;
+}
+
+.score-table td.num {
+  text-align: right;
+  font-weight: 800;
+  color: #fff;
+}
+
+.score-table tr.total td {
+  border-top: 2px solid #475569;
+  font-size: 24px;
+  color: #fde047;
+}
+
+.score-team {
+  font-size: 28px;
+  font-weight: 900;
+  color: #fde047;
+  margin-top: 8px;
+}
+
+.choice-buttons {
   display: flex;
   gap: 14px;
   justify-content: center;
 }
 
-.lose-buttons button {
+.choice-buttons button {
   font: inherit;
   font-size: 26px;
   font-weight: 800;
@@ -651,20 +724,15 @@ kbd {
   cursor: pointer;
 }
 
-.lose-buttons button.change {
+.choice-buttons button.secondary {
   background: #1f2937;
   color: #fff;
   border-color: #64748b;
 }
 
-.lose-buttons small {
+.choice-buttons small {
   display: block;
   font-size: 14px;
   font-weight: 600;
   opacity: 0.8;
-}
-
-/* Atribut hidden harus menang atas display:flex di atas. */
-[hidden] {
-  display: none !important;
 }

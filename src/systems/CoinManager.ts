@@ -75,6 +75,34 @@ export class CoinManager {
     }
   }
 
+  /** Koin di tanah (sudah mendarat) terdekat dari (x, z), atau null. Dipakai Pencuri. */
+  nearest(x: number, z: number): { x: number; z: number; index: number } | null {
+    let best = -1;
+    let bestD2 = Infinity;
+    this.pool.forEach((c, i) => {
+      if (!c.active || c.age < HOP_SEC) return;
+      const d2 = (c.x - x) ** 2 + (c.z - z) ** 2;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        best = i;
+      }
+    });
+    if (best < 0) return null;
+    return { x: this.pool[best].x, z: this.pool[best].z, index: best };
+  }
+
+  /** Ambil koin tanpa menambah koin tim (dicuri). */
+  take(index: number): boolean {
+    const c = this.pool[index];
+    if (!c?.active) return false;
+    c.active = false;
+    return true;
+  }
+
+  get pickupRadius(): number {
+    return this.rules.pickupRadius;
+  }
+
   update(dt: number, players: readonly Player[]): void {
     this.time += dt;
     let n = 0;

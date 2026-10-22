@@ -26,10 +26,12 @@ export class Markas {
     this.hp = Math.max(0, this.hp - amount);
   }
 
-  /** Pulihkan HP (Penyembuh). */
-  heal(amount: number): void {
-    if (this.destroyed) return;
+  /** Pulihkan HP (Penyembuh); mengembalikan jumlah yang benar-benar dipulihkan. */
+  heal(amount: number): number {
+    if (this.destroyed) return 0;
+    const before = this.hp;
     this.hp = Math.min(this.maxHp, this.hp + amount);
+    return this.hp - before;
   }
 
   reset(): void {

@@ -17,7 +17,10 @@ export interface DebugStats {
   projectiles: number;
   coinsOnGround: number;
   particles: number;
-  enemyTriangles: number;
+  /** Segitiga model musuh per jenis, mis. "tikus 228 · hantu 300". */
+  enemyTriangles: string;
+  /** Baris tambahan (level, kontribusi per peran). */
+  notes: string[];
 }
 
 const REFRESH_SEC = 0.25;
@@ -66,10 +69,11 @@ export class DebugOverlay {
     this.el.innerHTML = `
       <div class="big ${fpsClass}">${stats.fps.toFixed(0)} FPS</div>
       <div>Draw call: <b>${stats.drawCalls}</b> · Segitiga: <b>${stats.triangles.toLocaleString("id-ID")}</b></div>
-      <div>Musuh aktif: <b>${stats.activeEnemies}/${stats.enemyCapacity}</b> · Model tikus ${stats.enemyTriangles} segitiga</div>
+      <div>Musuh aktif: <b>${stats.activeEnemies}/${stats.enemyCapacity}</b> · Model: ${stats.enemyTriangles}</div>
       <div>Proyektil ${stats.projectiles} · Koin di tanah ${stats.coinsOnGround} · Partikel ${stats.particles}</div>
       <div>Kualitas: <b>${QUALITY_PRESETS[stats.quality].label}</b> · Render ${stats.renderWidth}×${stats.renderHeight}</div>
       <div class="keys">GPU: ${stats.gpu}</div>
+      ${stats.notes.map((n) => `<div class="keys">${n}</div>`).join("")}
       <table>${rows}</table>
       <div class="keys">Tombol ditekan: ${input.pressedKeys.join(" ") || "-"}</div>
       <div class="keys">Gamepad: ${pads.length ? pads.join(" | ") : "belum terdeteksi (tekan tombol apa saja di gamepad)"}</div>

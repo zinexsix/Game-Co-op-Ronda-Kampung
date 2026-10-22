@@ -62,6 +62,7 @@ export class PenyerangAbility implements RoleAbility {
           this.projectileSpeed,
           this.range,
           this.rapidDamage,
+          player.role.id,
         );
       }
     }
@@ -71,7 +72,7 @@ export class PenyerangAbility implements RoleAbility {
       area.cooldownLeft = this.areaCooldown;
       const { x, z } = player.position;
       ctx.effects.areaBlast(x, z, this.areaRadius);
-      ctx.enemies.damageInRadius(x, z, this.areaRadius, this.areaDamage);
+      ctx.enemies.damageInRadius(x, z, this.areaRadius, this.areaDamage, player.role.id);
     }
   }
 
