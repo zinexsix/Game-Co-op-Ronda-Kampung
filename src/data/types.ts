@@ -34,6 +34,13 @@ export interface SkillData {
   /** Heal. */
   healPlayer?: number;
   healMarkas?: number;
+  /** Ikon skill di HUD. */
+  icon?: string;
+  /** Serangan Cepat: jarak keluarnya proyektil di depan tubuh & tambahan radius kena. */
+  muzzleOffset?: number;
+  hitThickness?: number;
+  /** Barikade: jarak bebas minimal dari pos ronda saat memasang. */
+  placeClearance?: number;
   note?: string;
 }
 
@@ -159,6 +166,31 @@ export interface FlowRules {
   hintGapSec: number;
   /** Layar hasil kembali ke menu setelah sekian detik tanpa input. */
   resultIdleSec: number;
+  /** Ambang pemicu petunjuk tutorial. */
+  hintTriggers: { areaCrowd: number; lureCrowd: number; shieldDangerRadius: number };
+}
+
+/** Steering musuh bersama (enemies.json "ai"). */
+export interface EnemyAiRules {
+  separationWeight: number;
+  /** Jarak tambahan antar musuh sebelum saling mendorong (m). */
+  separationPadding: number;
+  /** Pencuri tanpa koin berkeliaran mengitari pos: langkah sudut per keputusan (radian). */
+  thiefLoiterStepRad: number;
+  steerRate: number;
+  blockDot: number;
+  barricadeLookahead: number;
+  thiefLoiterRadius: number;
+  escapeMargin: number;
+  spawnJitter: number;
+}
+
+export interface ComboRules {
+  trapKillWindowSec: number;
+  holdHealWindowSec: number;
+  barricadeStackMin: number;
+  barricadeStackRadius: number;
+  cooldownSec: number;
 }
 
 export interface BotRules {
@@ -180,17 +212,36 @@ export interface BotRules {
   preferredShootDistance: number;
   /** Jarak tambahan di luar radius hantaman boss yang dijaga bot. */
   bossAvoidMargin: number;
+  arriveDist: number;
+  bossTrapLead: number;
+  bossReachSlack: number;
+  reviveStandDist: number;
+  safeToReviveRadius: number;
+  /** Pancing dipakai jika kerumunan dalam fraksi ini dari radius Pancing. */
+  lureRangeFrac: number;
+  /** Penyembuh mendekati teman kritis sampai fraksi ini dari radius Heal. */
+  healApproachFrac: number;
+  /** Heal pos ronda jika jarak ke pos dalam fraksi ini dari radius Heal. */
+  healMarkasRangeFrac: number;
+  /** Selama boss belum kalah, jebakan untuk musuh biasa hanya jika koin cukup untuk sekian jebakan. */
+  bossTrapReserve: number;
+  /** Posisi jaga tiap peran di sekitar pos ronda (sudut, derajat). */
+  homeAnglesDeg: Record<RoleId, number>;
 }
 
 export interface GameRules {
   markas: { hp: number };
-  coins: { maxOnGround: number; pickupRadius: number; lifetimeSec: number; scatter: number };
-  player: { hitInvulnSec: number };
+  coins: { maxOnGround: number; pickupRadius: number; lifetimeSec: number; scatter: number; pickupDelaySec: number };
+  player: { hitInvulnSec: number; turnSpeed: number; spawns: [number, number][] };
   revive: { radius: number; durationSec: number; hpFraction: number; decayPerSec: number };
   testMode: { startCoins: number; addCoins: number; spawnGroup: number };
   bots: BotRules;
   /** Bobot poin per jenis kontribusi (MVP). */
   mvp: Record<string, number>;
+  combos: ComboRules;
+  audio: { master: number; music: number; sfx: number };
+  idle: { resetToMenuSec: number; warnSec: number };
+  autoQuality: { minFps: number; sampleSec: number; renderScaleSteps: number[] };
   roleSelect: { minPlayers: number; startCountdownSec: number };
 }
 
@@ -198,6 +249,7 @@ export const ROLES = rolesJson.roles as RoleData[];
 export const SPEED_CLASSES = rolesJson.speedClasses as Record<SpeedClass, number>;
 export const ENEMIES = enemiesJson.enemies as EnemyData[];
 export const MAX_ACTIVE_ENEMIES: number = enemiesJson.maxActive;
+export const ENEMY_AI = enemiesJson.ai as EnemyAiRules;
 export const LEVELS = levelsJson.levels as unknown as LevelData[];
 export const PLAYER_SCALING = levelsJson.playerScaling as unknown as Record<string, PlayerScaling>;
 export const SCORE_RULES = levelsJson.score as ScoreRules;

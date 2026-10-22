@@ -2,11 +2,12 @@ import { Engine, Matrix, SceneInstrumentation, Vector3 } from "@babylonjs/core";
 import "./style.css";
 import { SYSTEM_KEYS } from "./config/controls";
 import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualityLevel } from "./config/quality";
-import { FLOW_RULES, LEVELS, ROLES, getRole, type RoleId } from "./data/types";
+import { FLOW_RULES, GAME_RULES, LEVELS, ROLES, getRole, type RoleId } from "./data/types";
 import { createArenaScene } from "./scenes/ArenaScene";
 import { MatchScene, type Assignment } from "./scenes/MatchScene";
 import { MenuScene } from "./scenes/MenuScene";
 import { RoleSelectScene } from "./scenes/RoleSelectScene";
+import { AudioSystem } from "./systems/AudioSystem";
 import { Benchmark, type BenchResult } from "./systems/Benchmark";
 import { InputManager } from "./systems/InputManager";
 import { QualityManager } from "./systems/QualityManager";
@@ -41,7 +42,10 @@ const { scene } = arena;
 
 // --- Sistem permainan: semua aset dibuat di awal, lalu dipakai ulang ---
 const input = new InputManager();
-const match = new MatchScene(scene, arena, input);
+const audio = new AudioSystem(GAME_RULES.audio);
+const match = new MatchScene(scene, arena, input, audio);
+// Browser hanya mengizinkan suara setelah interaksi pertama.
+for (const ev of ["keydown", "pointerdown"]) window.addEventListener(ev, () => audio.unlock());
 
 // --- Kualitas & UI ---
 const quality = new QualityManager(engine, arena.sun, arena.shadows, initialQuality);
@@ -51,7 +55,11 @@ quality.addDynamicCasters([
   ...match.structures.shadowMeshes,
 ]);
 
-const settings = new SettingsBar(uiRoot, (l) => quality.apply(l), toggleFullscreen);
+const settings = new SettingsBar(uiRoot, (l) => quality.apply(l), toggleFullscreen, () => {
+  audio.unlock();
+  audio.toggleMute();
+  settings.setMuted(audio.isMuted);
+});
 settings.setActive(quality.level);
 quality.onChange((l) => settings.setActive(l));
 
@@ -60,12 +68,10 @@ const tmpWorld = new Vector3();
 const project: Projector = (x, y, z) => {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
-  const out = Vector3.Project(
-    tmpWorld.set(x, y, z),
-    Matrix.IdentityReadOnly,
-    scene.getTransformMatrix(),
-    arena.camera.viewport.toGlobal(w, h),
-  );
+  // Viewport Babylon dihitung dari bawah layar; koordinat CSS dari atas -> balik sumbu Y.
+  const g = arena.camera.viewport.toGlobal(w, h);
+  g.y = h - g.y - g.height;
+  const out = Vector3.Project(tmpWorld.set(x, y, z), Matrix.IdentityReadOnly, scene.getTransformMatrix(), g);
   return out.z < 0 || out.z > 1 ? null : { x: out.x, y: out.y };
 };
 
@@ -73,12 +79,16 @@ const hud = new Hud(uiRoot);
 const roleSelect = new RoleSelectScene(uiRoot, input, (assignments) => startMatch(withBots(assignments)));
 const choice = new ChoiceScreen(uiRoot, input, FLOW_RULES.screenInputDelaySec);
 // Slot yang menekan tombol di menu langsung tergabung di pilih peran.
-const menu = new MenuScene(uiRoot, input, (slot) => openRoleSelect([{ slot, roleId: ROLES[0].id }]));
+const menu = new MenuScene(uiRoot, input, (slot) => openRoleSelect([{ slot, roleId: ROLES[0].id }]), audio);
 
 const debug = new DebugOverlay(uiRoot);
 const status = document.createElement("div");
 status.className = "status";
 uiRoot.appendChild(status);
+const idleWarning = document.createElement("div");
+idleWarning.className = "idle-warning";
+idleWarning.hidden = true;
+uiRoot.appendChild(idleWarning);
 
 type AppState = "menu" | "pilihPeran" | "pertandingan";
 let appState: AppState = "menu";
@@ -128,6 +138,7 @@ function openRoleSelect(previous: readonly Assignment[] = []): void {
   choice.hide();
   menu.hide();
   roleSelect.show(keep);
+  audio.setMood("menu");
   appState = "pilihPeran";
 }
 
@@ -139,7 +150,40 @@ function openMenu(): void {
   roleSelect.hide();
   arena.setLayout(LEVELS[0].arena.id);
   menu.show();
+  audio.setMood("menu");
   appState = "menu";
+}
+
+// --- Reset otomatis ke menu jika tidak ada input (pengunjung pergi di tengah permainan) ---
+/** Untuk tes otomatis: ?idle=0 mematikan reset. */
+const idleEnabled = params.get("idle") !== "0";
+let idleTimer = 0;
+
+function anyPlayerInput(): boolean {
+  if (input.pressedKeys.length > 0) return true;
+  for (let i = 0; i < input.playerCount; i++) {
+    const s = input.getState(i);
+    if (s.skill1 || s.skill2 || Math.abs(s.moveX) > 0.2 || Math.abs(s.moveZ) > 0.2) return true;
+  }
+  return false;
+}
+
+function updateIdle(dt: number): void {
+  const rules = GAME_RULES.idle;
+  if (!idleEnabled || appState === "menu" || benchmark.running || anyPlayerInput()) {
+    idleTimer = 0;
+    idleWarning.hidden = true;
+    return;
+  }
+  idleTimer += dt;
+  const left = Math.ceil(rules.resetToMenuSec - idleTimer);
+  idleWarning.hidden = left > rules.warnSec || choice.shown; // layar hasil punya hitung mundurnya sendiri
+  if (!idleWarning.hidden) idleWarning.innerHTML = `Masih bermain?<small>Kembali ke menu dalam ${Math.max(0, left)} dtk · tekan tombol apa saja</small>`;
+  if (idleTimer >= rules.resetToMenuSec) {
+    idleTimer = 0;
+    idleWarning.hidden = true;
+    openMenu();
+  }
 }
 
 const playerSlots = () => match.activePlayers.map((p) => p.slot);
@@ -302,6 +346,20 @@ scene.onBeforeRenderObservable.add(() => {
 
   benchmark.tick(rawDt, totalTime); // benchmark mengukur frame time asli
   input.update();
+  audio.update();
+  arena.updateShake(dt);
+  updateIdle(dt);
+  // Bunyi klik singkat untuk pilihan di menu & pilih peran.
+  if (appState !== "pertandingan" || choice.shown) {
+    for (let i = 0; i < input.playerCount; i++) {
+      const p = input.getPresses(i);
+      if (p.skill1 || p.skill2 || p.left || p.right) {
+        audio.unlock();
+        audio.play("pilih");
+        break;
+      }
+    }
+  }
 
   if (appState === "menu") {
     menu.update();
@@ -324,8 +382,18 @@ scene.onBeforeRenderObservable.add(() => {
   choice.update(dt);
 });
 
+let autoQualityNoticeTimer = 0;
 scene.onAfterRenderObservable.add(() => {
   const dt = engine.getDeltaTime() / 1000;
+  // Penurunan skala resolusi otomatis jika FPS terus di bawah batas (bukan saat benchmark).
+  if (!benchmark.running) {
+    const scale = quality.autoAdjust(dt, GAME_RULES.autoQuality);
+    if (scale !== null) {
+      status.textContent = `FPS rendah: resolusi diturunkan otomatis ke ${Math.round(scale * 100)}%`;
+      autoQualityNoticeTimer = 3;
+    }
+  }
+  if (autoQualityNoticeTimer > 0 && (autoQualityNoticeTimer -= dt) <= 0 && !benchmark.running) status.textContent = "";
   const size = renderSize(engine);
   debug.update(
     dt,
@@ -393,7 +461,7 @@ console.log(
 
 // Akses dari konsol browser saat pengembangan (tidak ada di build pameran).
 if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>).__game = { match, input, engine, roleSelect, choice, arena, menu };
+  (window as unknown as Record<string, unknown>).__game = { match, input, engine, roleSelect, choice, arena, menu, audio, quality };
 }
 
 // Untuk tes: ?roles=penyerang,penjaga langsung main (slot P1, P2, ... sesuai urutan); ?level=2 mulai di Level 2.

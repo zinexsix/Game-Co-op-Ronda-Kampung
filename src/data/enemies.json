@@ -1,6 +1,18 @@
 {
   "_note": "target: markas | pemain | koin. barricadeBypass = seberapa jauh dari tengah barikade (0-1, relatif setengah lebar) musuh memilih memutar, bukan menggigit; musuh dengan barricadeDamage 0 selalu memutar. passesBarricades = menembus barikade. Pencuri: mencuri sampai carryMax koin lalu kabur ke tepi arena (fleeSpeedMult). lureMultiplier = pengali lama efek Pancing. boss: hanya menerima damage saat terkena stun jebakan (setelah stun, kebal stun selama stunCooldownSec; tiap kali terjebak tim mendapat coinsOnStun koin untuk jebakan berikutnya); fase 2 di bawah phase2At HP memanggil summonEnemy, fase 3 di bawah phase3At mengamuk (kecepatan x enrageSpeedMult, jeda serangan x enrageAttackMult); serangan menghantam semua pemain dalam slamRadius.",
   "maxActive": 30,
+  "ai": {
+    "_note": "Steering musuh. blockDot = cos sudut barikade dianggap menghalangi; spawnJitter = acakan posisi muncul (m).",
+    "separationWeight": 1.4,
+    "separationPadding": 0.2,
+    "thiefLoiterStepRad": 0.6,
+    "steerRate": 6,
+    "blockDot": 0.5,
+    "barricadeLookahead": 0.3,
+    "thiefLoiterRadius": 6,
+    "escapeMargin": 0.4,
+    "spawnJitter": 1.5
+  },
   "enemies": [
     {
       "id": "tikus",

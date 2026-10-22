@@ -31,6 +31,8 @@ export class Enemy {
   biteTimer = 0;
   /** Sisa waktu stun (jebakan): tidak bergerak & tidak menyerang. */
   stunTimer = 0;
+  /** Detik sejak terakhir kena jebakan (Infinity = belum pernah). Dipakai combo "Jebak & Habisi". */
+  trappedAge = Infinity;
   /** Pancing Penjaga: selama lureTimer > 0 musuh mengejar pemain ini, bukan markas. */
   lureTarget: Player | null = null;
   lureTimer = 0;
@@ -60,6 +62,7 @@ export class Enemy {
     this.hitTimer = 0;
     this.biteTimer = 0;
     this.stunTimer = 0;
+    this.trappedAge = Infinity;
     this.lureTarget = null;
     this.lureTimer = 0;
     this.bobPhase = Math.random() * Math.PI * 2;

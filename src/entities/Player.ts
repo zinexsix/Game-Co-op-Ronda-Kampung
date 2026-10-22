@@ -11,7 +11,6 @@ import {
 import { GAME_RULES, SPEED_CLASSES, type RoleData } from "../data/types";
 import type { PlayerInputState } from "../systems/InputManager";
 
-const TURN_SPEED = 14; // rad/detik, kecepatan berputar menghadap arah gerak
 const HIT_FLASH_SEC = 0.18; // lama kilatan merah saat terkena serangan
 const HIT_FLASH_COLOR = new Color3(1, 0.25, 0.2);
 const DOWNED_RING_COLOR = new Color3(0.25, 0.25, 0.28);
@@ -263,7 +262,7 @@ export class Player {
       this.root.position.z += nz * speed * k * dt;
       const targetYaw = Math.atan2(nx, nz);
       const diff = Scalar.NormalizeRadians(targetYaw - this.yaw);
-      this.yaw += Math.sign(diff) * Math.min(Math.abs(diff), TURN_SPEED * dt);
+      this.yaw += Math.sign(diff) * Math.min(Math.abs(diff), GAME_RULES.player.turnSpeed * dt);
       this.root.rotation.y = this.yaw;
     }
   }
@@ -352,10 +351,5 @@ const SILHOUETTES: Record<RoleData["id"], Silhouette> = {
   },
 };
 
-/** Titik awal per slot pemain (P1-P4). */
-export const PLAYER_SPAWNS: Vector3[] = [
-  new Vector3(-6, 0, 4),
-  new Vector3(6, 0, 4),
-  new Vector3(-6, 0, -4),
-  new Vector3(6, 0, -4),
-];
+/** Titik awal per slot pemain (P1-P4), dari game.json. */
+export const PLAYER_SPAWNS: Vector3[] = GAME_RULES.player.spawns.map(([x, z]) => new Vector3(x, 0, z));

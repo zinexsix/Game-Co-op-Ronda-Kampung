@@ -13,6 +13,7 @@ import {
   StandardMaterial,
   TransformNode,
   Vector3,
+  VertexData,
   Viewport,
   type AbstractEngine,
   type AbstractMesh,
@@ -44,6 +45,10 @@ export interface Arena {
   /** Tampilkan tata letak arena ini, ganti batas arena aktif, dan sesuaikan kamera. */
   setLayout: (id: string) => void;
   readonly layoutId: string;
+  /** Guncangan kamera singkat (kekuatan dalam meter, lama dalam detik). */
+  shake: (strength: number, duration: number) => void;
+  /** Panggil tiap frame untuk menjalankan guncangan. */
+  updateShake: (dt: number) => void;
 }
 
 type MatFn = (name: string, hex: string, emissive?: number) => StandardMaterial;
@@ -167,12 +172,15 @@ export function createArenaScene(engine: AbstractEngine, shadowMapSize: number, 
   kentongan.material = mat("wood", "#7a5232");
   post.push(kentongan);
 
-  for (const m of post) {
+  floor.receiveShadows = true;
+  // Pos ronda: gabungkan bagian bermaterial sama (mis. lantai+tiang+kentongan kayu).
+  const postMerged = mergeStatics(scene, "post", post as Mesh[], new Set(post), new Set([floor]));
+  for (const m of postMerged.meshes) {
     m.isPickable = false;
     m.freezeWorldMatrix();
-    shadows.addShadowCaster(m, false);
   }
-  floor.receiveShadows = true;
+  for (const m of postMerged.casters) shadows.addShadowCaster(m, false);
+  for (const m of postMerged.receivers) m.receiveShadows = true;
 
   // --- Tata letak per level ---
   const roots = new Map<string, { root: TransformNode; spec: ArenaLayoutSpec }>();
@@ -182,18 +190,25 @@ export function createArenaScene(engine: AbstractEngine, shadowMapSize: number, 
     const root = new TransformNode(`arena_${spec.id}`, scene);
     const ctx: BuildCtx = { scene, mat, root, hw: spec.halfWidth, hd: spec.halfDepth, statics: [], casters: [], receivers: [] };
     builder(ctx);
-    for (const m of ctx.statics) {
+    // Optimasi: gabungkan semua mesh statis bermaterial sama (thin instance ikut "dipanggang")
+    // -> satu draw call per material per arena.
+    const merged = mergeStatics(scene, spec.id, ctx.statics as Mesh[], new Set(ctx.casters), new Set(ctx.receivers));
+    for (const m of merged.meshes) {
       m.parent = root;
       m.isPickable = false;
       m.freezeWorldMatrix();
     }
-    for (const m of ctx.casters) shadows.addShadowCaster(m, false);
-    for (const m of ctx.receivers) m.receiveShadows = true;
+    for (const m of merged.casters) shadows.addShadowCaster(m, false);
+    for (const m of merged.receivers) m.receiveShadows = true;
     root.setEnabled(false);
     roots.set(spec.id, { root, spec });
   }
 
   let layoutId = "";
+  const baseTarget = camera.target.clone();
+  let shakeLeft = 0;
+  let shakeDur = 1;
+  let shakeStrength = 0;
   const arena: Arena = {
     scene,
     camera,
@@ -222,6 +237,24 @@ export function createArenaScene(engine: AbstractEngine, shadowMapSize: number, 
     },
     get layoutId() {
       return layoutId;
+    },
+    shake: (strength, duration) => {
+      // Guncangan yang lebih kuat menggantikan yang lemah; yang lemah tidak memotong yang kuat.
+      if (shakeLeft > 0 && strength * duration < shakeStrength * shakeLeft) return;
+      shakeStrength = strength;
+      shakeDur = duration;
+      shakeLeft = duration;
+    },
+    updateShake: (dt) => {
+      if (shakeLeft <= 0) return;
+      shakeLeft = Math.max(0, shakeLeft - dt);
+      const k = shakeStrength * (shakeLeft / shakeDur);
+      camera.target.set(
+        baseTarget.x + (Math.random() * 2 - 1) * k,
+        baseTarget.y,
+        baseTarget.z + (Math.random() * 2 - 1) * k,
+      );
+      if (shakeLeft <= 0) camera.target.copyFrom(baseTarget);
     },
   };
   arena.setLayout(layouts[0].id);
@@ -591,6 +624,62 @@ function addLamps(c: BuildCtx, prefix: string, spots: number[][]): void {
   setThinInstances(bulb, spots.map(([x, z]) => trs(x, 3.1, z)));
   c.statics.push(pole, bulb);
   c.casters.push(pole);
+}
+
+/**
+ * Gabungkan mesh statis per kelompok (material + membuat bayangan + menerima bayangan) menjadi satu mesh.
+ * Thin instance dipanggang menjadi geometri biasa (posisi akhir tiap salinan), lalu mesh asli dibuang.
+ */
+function mergeStatics(
+  scene: Scene, name: string, meshes: Mesh[], casters: ReadonlySet<AbstractMesh>, receivers: ReadonlySet<AbstractMesh>,
+): { meshes: Mesh[]; casters: Mesh[]; receivers: Mesh[] } {
+  const groups = new Map<string, Mesh[]>();
+  for (const m of meshes) {
+    const key = `${m.material?.uniqueId ?? "none"}|${casters.has(m) ? 1 : 0}|${receivers.has(m) ? 1 : 0}`;
+    const list = groups.get(key) ?? [];
+    list.push(m);
+    groups.set(key, list);
+  }
+  const out = { meshes: [] as Mesh[], casters: [] as Mesh[], receivers: [] as Mesh[] };
+  let index = 0;
+  for (const list of groups.values()) {
+    const first = list[0];
+    let result: Mesh;
+    if (list.length === 1 && !first.hasThinInstances) {
+      result = first;
+    } else {
+      const parts: VertexData[] = [];
+      for (const m of list) {
+        const world = m.computeWorldMatrix(true).clone();
+        const base = VertexData.ExtractFromMesh(m, true, true);
+        const copies = m.hasThinInstances ? m.thinInstanceGetWorldMatrices() : [Matrix.Identity()];
+        for (const local of copies) {
+          const vd = cloneVertexData(base);
+          vd.transform(local.multiply(world));
+          parts.push(vd);
+        }
+      }
+      const data = parts[0];
+      if (parts.length > 1) data.merge(parts.slice(1), true, false, false, true);
+      result = new Mesh(`${name}_static${index++}`, scene);
+      data.applyToMesh(result);
+      result.material = first.material;
+      for (const m of list) m.dispose(false, false);
+    }
+    out.meshes.push(result);
+    if (casters.has(first)) out.casters.push(result);
+    if (receivers.has(first)) out.receivers.push(result);
+  }
+  return out;
+}
+
+function cloneVertexData(src: VertexData): VertexData {
+  const vd = new VertexData();
+  if (src.positions) vd.positions = Array.from(src.positions);
+  if (src.normals) vd.normals = Array.from(src.normals);
+  if (src.uvs) vd.uvs = Array.from(src.uvs);
+  if (src.indices) vd.indices = Array.from(src.indices);
+  return vd;
 }
 
 /** Matriks translasi + rotasi (yaw, lalu pitch/roll opsional) + skala seragam. */

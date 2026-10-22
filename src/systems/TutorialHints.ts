@@ -25,9 +25,6 @@ interface PendingHint {
   done: boolean;
 }
 
-const AREA_CROWD = 3;
-const LURE_CROWD = 2;
-const SHIELD_DANGER_RADIUS = 3;
 
 /**
  * Petunjuk singkat Level 1 (maks satu kalimat per skill), muncul sekali saat konteksnya tepat.
@@ -50,9 +47,9 @@ export class TutorialHints {
       mulai: (c) => c.time > 0.5,
       koin: (c) => c.coins.activeCount > 0,
       tembak: (c) => c.enemies.activeCount > 0,
-      area: (c, p) => !!p && c.enemies.countWithin(p.position.x, p.position.z, areaRadius) >= AREA_CROWD,
-      perisai: (c, p) => !!p && c.enemies.countWithin(p.position.x, p.position.z, SHIELD_DANGER_RADIUS) >= 1,
-      pancing: (c, p) => !!p && c.enemies.countWithin(p.position.x, p.position.z, lureRadius) >= LURE_CROWD,
+      area: (c, p) => !!p && c.enemies.countWithin(p.position.x, p.position.z, areaRadius) >= flow.hintTriggers.areaCrowd,
+      perisai: (c, p) => !!p && c.enemies.countWithin(p.position.x, p.position.z, flow.hintTriggers.shieldDangerRadius) >= 1,
+      pancing: (c, p) => !!p && c.enemies.countWithin(p.position.x, p.position.z, lureRadius) >= flow.hintTriggers.lureCrowd,
       barikade: (c) => c.coinCount >= barricadeCost,
       jebakan: (c) => c.coinCount >= trapCost,
       heal: (c, p) =>
@@ -61,6 +58,8 @@ export class TutorialHints {
           c.players.some((q) => q !== p && q.injured && !q.downed && dist(p, q) <= healRadius)),
       buff: (c) => c.wavesStarted >= 2,
       revive: (c) => c.players.some((q) => q.downed),
+      // Combo Jebak & Habisi: ada musuh terjebak dan Penyerang ikut bermain.
+      combo: (c) => c.enemies.pool.some((e) => e.active && e.stunned) && c.players.some((q) => q.role.id === "penyerang"),
     };
   }
 

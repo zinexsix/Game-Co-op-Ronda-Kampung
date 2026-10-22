@@ -3,29 +3,18 @@ import { Enemy } from "../entities/Enemy";
 import { buildEnemyModel, type EnemyModel } from "../entities/EnemyModels";
 import type { Markas } from "../entities/Markas";
 import type { DamageResult, Player } from "../entities/Player";
-import type { EnemyData, RoleId } from "../data/types";
+import { ENEMY_AI as AI, type EnemyData, type RoleId } from "../data/types";
 import { ARENA } from "../config/arena";
 import type { CoinManager } from "./CoinManager";
 import { distanceToBox, nearestOnObb, pushOutOfBox, pushOutOfCircle, toObbLocal } from "./Collision";
 import type { Barricade, StructureManager } from "./StructureManager";
 
-const SEPARATION_WEIGHT = 1.4;
-const STEER_RATE = 6; // seberapa cepat kecepatan menyesuaikan arah tujuan
 const HIT_ANIM_SEC = 0.15;
 const BITE_ANIM_SEC = 0.2;
-/** Barikade dianggap menghalangi jika arah ke barikade searah tujuan (cos sudut). */
-const BLOCK_DOT = 0.5;
-/** Jarak tambahan untuk mulai "melihat" barikade di depan. */
-const BARRICADE_LOOKAHEAD = 0.3;
-/** Pencuri tanpa koin incaran berkeliaran sejauh ini dari pos ronda. */
-const THIEF_LOITER_RADIUS = 6;
-/** Pencuri dianggap lolos jika sedekat ini dengan tepi arena saat kabur. */
-const ESCAPE_MARGIN = 0.4;
 /** Isi pool otomatis (benchmark): jeda antar munculnya musuh. */
 const FILL_SPAWN_INTERVAL = 0.08;
 const STARS_PER_ENEMY = 2;
 const STAR_ORBIT_SPEED = 6;
-const SPAWN_JITTER = 1.5;
 
 export type AttackTarget = "pemain" | "markas" | "barikade";
 
@@ -173,7 +162,7 @@ export class EnemyManager {
     const [x, z] = this.spawnPoints[Math.floor(Math.random() * this.spawnPoints.length)];
     let n = 0;
     for (let i = 0; i < count; i++) {
-      if (this.spawnAt(typeId, x + (Math.random() - 0.5) * SPAWN_JITTER, z + (Math.random() - 0.5) * SPAWN_JITTER)) n++;
+      if (this.spawnAt(typeId, x + (Math.random() - 0.5) * AI.spawnJitter, z + (Math.random() - 0.5) * AI.spawnJitter)) n++;
     }
     return n;
   }
@@ -226,6 +215,7 @@ export class EnemyManager {
       if (!e.active || e.stunImmuneTimer > 0 || !this.within(e, x, z, radius)) continue;
       if (e.data?.boss && !e.stunned) this.events.onBossStunned(e);
       e.stunTimer = Math.max(e.stunTimer, duration);
+      e.trappedAge = 0;
       e.velocity.setAll(0);
       n++;
     }
@@ -292,6 +282,7 @@ export class EnemyManager {
       e.hitTimer = Math.max(0, e.hitTimer - dt);
       e.biteTimer = Math.max(0, e.biteTimer - dt);
       e.lureTimer = Math.max(0, e.lureTimer - dt);
+      e.trappedAge += dt;
       if (e.lureTimer <= 0 || !e.lureTarget?.active || e.lureTarget.downed) e.lureTarget = null;
 
       e.stunImmuneTimer = Math.max(0, e.stunImmuneTimer - dt);
@@ -375,16 +366,16 @@ export class EnemyManager {
         const ox = e.position.x - o.position.x;
         const oz = e.position.z - o.position.z;
         const d2 = ox * ox + oz * oz;
-        const minD = e.radius + o.radius + 0.2;
+        const minD = e.radius + o.radius + AI.separationPadding;
         if (d2 > 1e-6 && d2 < minD * minD) {
           const dd = Math.sqrt(d2);
           sx += (ox / dd) * (1 - dd / minD);
           sz += (oz / dd) * (1 - dd / minD);
         }
       }
-      const desiredX = (dx + sx * SEPARATION_WEIGHT) * speed;
-      const desiredZ = (dz + sz * SEPARATION_WEIGHT) * speed;
-      const k = Math.min(1, STEER_RATE * dt);
+      const desiredX = (dx + sx * AI.separationWeight) * speed;
+      const desiredZ = (dz + sz * AI.separationWeight) * speed;
+      const k = Math.min(1, AI.steerRate * dt);
       e.velocity.x += (desiredX - e.velocity.x) * k;
       e.velocity.z += (desiredZ - e.velocity.z) * k;
       e.position.x += e.velocity.x * dt;
@@ -497,8 +488,8 @@ export class EnemyManager {
         e.fleeing = true;
       } else {
         // Belum ada koin: berkeliaran di sekitar pos ronda menunggu koin jatuh.
-        const a = Math.atan2(e.position.z, e.position.x) + 0.6;
-        return { x: Math.cos(a) * THIEF_LOITER_RADIUS, z: Math.sin(a) * THIEF_LOITER_RADIUS };
+        const a = Math.atan2(e.position.z, e.position.x) + AI.thiefLoiterStepRad;
+        return { x: Math.cos(a) * AI.thiefLoiterRadius, z: Math.sin(a) * AI.thiefLoiterRadius };
       }
     }
     // Kabur ke tepi arena terdekat.
@@ -507,7 +498,7 @@ export class EnemyManager {
     const p = e.position;
     const toEdge = [hw - p.x, hw + p.x, hd - p.z, hd + p.z];
     const side = toEdge.indexOf(Math.min(...toEdge));
-    if (toEdge[side] <= ESCAPE_MARGIN) {
+    if (toEdge[side] <= AI.escapeMargin) {
       const carried = e.carried;
       this.remove(e);
       this.events.onEscaped(e, carried);
@@ -532,9 +523,9 @@ export class EnemyManager {
       const vx = n.x - e.position.x;
       const vz = n.z - e.position.z;
       const gap = Math.hypot(vx, vz) - e.radius;
-      if (gap > d.attackRange + BARRICADE_LOOKAHEAD) continue;
+      if (gap > d.attackRange + AI.barricadeLookahead) continue;
       const len = Math.hypot(vx, vz) || 1;
-      if ((vx * dirX + vz * dirZ) / len < BLOCK_DOT) continue; // barikade tidak di jalur
+      if ((vx * dirX + vz * dirZ) / len < AI.blockDot) continue; // barikade tidak di jalur
       const { u } = toObbLocal(e.position.x, e.position.z, b);
       const canBite = d.barricadeDamage > 0;
       if (!canBite || (d.barricadeBypass > 0 && Math.abs(u) >= b.halfX * d.barricadeBypass)) {

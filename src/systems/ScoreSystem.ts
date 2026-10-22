@@ -23,11 +23,16 @@ export class ScoreSystem {
 
   constructor(private readonly rules: ScoreRules) {}
 
+  /** Poin per combo (untuk teks COMBO). */
+  get comboPoints(): number {
+    return this.rules.comboPoints;
+  }
+
   get total(): number {
     return this.levels.reduce((n, l) => n + l.total, 0);
   }
 
-  /** Hitung skor level (belum disimpan). Combo = 0 sampai Tahap 6. */
+  /** Hitung skor level (belum disimpan). */
   compute(levelName: string, markasHp: number, combos: number, seconds: number, parTimeSec: number): LevelScore {
     const hp = Math.max(0, Math.ceil(markasHp));
     const markasPoints = hp * this.rules.markasHpPoints;

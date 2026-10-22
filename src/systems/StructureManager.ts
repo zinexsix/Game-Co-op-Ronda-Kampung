@@ -11,14 +11,16 @@ import {
 import { ARENA } from "../config/arena";
 import type { SkillData } from "../data/types";
 import { distanceToBox, pushOutOfObb, type CircleBody, type OrientedBox, type StaticBox } from "./Collision";
+import { createGroundRing } from "./Effects";
 import type { EnemyManager } from "./EnemyManager";
 
 const BARRICADE_HEIGHT = 1.0;
 const BARRICADE_HIT_SEC = 0.15;
+const STRIPE_THICKNESS = 0.12;
+const STRIPE_LIFT = 0.3;
+const RING_LIFT = 0.06;
 /** Warna barikade saat HP hampir habis (dikalikan ke warna kayu). */
 const BARRICADE_DAMAGED_TINT = 0.45;
-/** Jarak bebas minimal dari pos ronda saat memasang. */
-const PLACE_CLEARANCE = 0.3;
 
 export interface Barricade extends OrientedBox {
   active: boolean;
@@ -53,6 +55,7 @@ interface StructureRules {
   barricadeWidth: number;
   barricadeDepth: number;
   barricadeMax: number;
+  barricadeClearance: number;
   trapTriggerRadius: number;
   trapStunRadius: number;
   trapStunSec: number;
@@ -72,6 +75,16 @@ export class StructureManager {
   private readonly rules: StructureRules;
   private readonly barricadeMesh: Mesh;
   private readonly trapMesh: Mesh;
+  /** Penanda: cincin jangkauan stun di sekitar jebakan & strip HP di atas barikade (instanced). */
+  private readonly trapRing: Mesh;
+  private readonly hpStripe: Mesh;
+  private readonly ringMatrices: Float32Array;
+  private readonly ringColors: Float32Array;
+  private readonly stripeMatrices: Float32Array;
+  private readonly stripeColors: Float32Array;
+  private readonly stripeScale = new Vector3(1, 1, 1);
+  private readonly ringScale = new Vector3(1, 1, 1);
+  private readonly identityQuat = Quaternion.Identity();
   private readonly barricadeMatrices: Float32Array;
   private readonly barricadeColors: Float32Array;
   private readonly trapMatrices: Float32Array;
@@ -95,6 +108,7 @@ export class StructureManager {
       barricadeWidth: need(barricade.width, "barikade.width"),
       barricadeDepth: need(barricade.depth, "barikade.depth"),
       barricadeMax: need(barricade.maxActive, "barikade.maxActive"),
+      barricadeClearance: need(barricade.placeClearance, "barikade.placeClearance"),
       trapTriggerRadius: need(trap.triggerRadius, "jebakan.triggerRadius"),
       trapStunRadius: need(trap.radius, "jebakan.radius"),
       trapStunSec: need(trap.duration, "jebakan.duration"),
@@ -111,6 +125,15 @@ export class StructureManager {
 
     this.barricadeMesh = buildBarricadeMesh(scene, r.barricadeWidth, r.barricadeDepth);
     this.trapMesh = buildTrapMesh(scene, r.trapTriggerRadius);
+    this.trapRing = createGroundRing("trapRing", scene, 0.07);
+    this.trapRing.material = glowMaterial(scene, "trapRingMat");
+    this.hpStripe = MeshBuilder.CreateBox("barricadeHp", { size: 1 }, scene);
+    this.hpStripe.material = glowMaterial(scene, "barricadeHpMat");
+    this.ringMatrices = new Float32Array(r.trapMax * 16);
+    this.ringColors = new Float32Array(r.trapMax * 4);
+    this.stripeMatrices = new Float32Array(r.barricadeMax * 16);
+    this.stripeColors = new Float32Array(r.barricadeMax * 4);
+    this.ringScale.set(r.trapStunRadius, 1, r.trapStunRadius);
     this.barricadeMatrices = new Float32Array(r.barricadeMax * 16);
     this.barricadeColors = new Float32Array(r.barricadeMax * 4);
     this.trapMatrices = new Float32Array(r.trapMax * 16);
@@ -118,6 +141,8 @@ export class StructureManager {
     for (const [mesh, m, c] of [
       [this.barricadeMesh, this.barricadeMatrices, this.barricadeColors],
       [this.trapMesh, this.trapMatrices, this.trapColors],
+      [this.trapRing, this.ringMatrices, this.ringColors],
+      [this.hpStripe, this.stripeMatrices, this.stripeColors],
     ] as const) {
       mesh.thinInstanceSetBuffer("matrix", m, 16, false);
       mesh.thinInstanceSetBuffer("color", c, 4, false);
@@ -150,7 +175,7 @@ export class StructureManager {
     const cx = clamp(x, ARENA.halfWidth - r.barricadeDepth);
     const cz = clamp(z, ARENA.halfDepth - r.barricadeDepth);
     // Tolak jika menutupi pos ronda (cek tengah dan kedua ujung).
-    const clear = r.barricadeDepth / 2 + PLACE_CLEARANCE;
+    const clear = r.barricadeDepth / 2 + r.barricadeClearance;
     for (const t of [-1, 0, 1]) {
       if (distanceToBox(cx + cos * halfW * t, cz + sin * halfW * t, this.markasBox) < clear) return "terhalang";
     }
@@ -233,12 +258,21 @@ export class StructureManager {
       const health = b.hp / b.maxHp;
       const k = BARRICADE_DAMAGED_TINT + (1 - BARRICADE_DAMAGED_TINT) * health;
       this.barricadeColors.set([1, k, k, 1], n * 4);
+      // Strip HP di atas barikade: panjang = sisa HP, hijau -> merah.
+      this.stripeScale.set(Math.max(0.05, r.barricadeWidth * health), STRIPE_THICKNESS, STRIPE_THICKNESS * 1.5);
+      this.tmpPos.set(b.cx, BARRICADE_HEIGHT + STRIPE_LIFT, b.cz);
+      Matrix.ComposeToRef(this.stripeScale, this.tmpQuat, this.tmpPos, this.tmpMatrix);
+      this.tmpMatrix.copyToArray(this.stripeMatrices, n * 16);
+      this.stripeColors.set([1 - health * 0.7, 0.35 + health * 0.6, 0.15, 1], n * 4);
       n++;
     }
     this.barricadeMesh.thinInstanceCount = n;
+    this.hpStripe.thinInstanceCount = n;
     if (n > 0) {
       this.barricadeMesh.thinInstanceBufferUpdated("matrix");
       this.barricadeMesh.thinInstanceBufferUpdated("color");
+      this.hpStripe.thinInstanceBufferUpdated("matrix");
+      this.hpStripe.thinInstanceBufferUpdated("color");
     }
 
     n = 0;
@@ -251,12 +285,21 @@ export class StructureManager {
       // Siap: berkedip terang. Sedang mengisi ulang: redup.
       const k = t.rearm > 0 ? 0.35 : 0.75 + 0.25 * Math.sin(this.time * 6);
       this.trapColors.set([k, k, k, 1], n * 4);
+      // Cincin jangkauan stun: kuning berdenyut saat siap, abu-abu saat mengisi ulang.
+      this.tmpPos.set(t.x, RING_LIFT, t.z);
+      Matrix.ComposeToRef(this.ringScale, this.identityQuat, this.tmpPos, this.tmpMatrix);
+      this.tmpMatrix.copyToArray(this.ringMatrices, n * 16);
+      if (t.rearm > 0) this.ringColors.set([0.4, 0.4, 0.4, 1], n * 4);
+      else this.ringColors.set([k, k * 0.85, 0.15, 1], n * 4);
       n++;
     }
     this.trapMesh.thinInstanceCount = n;
+    this.trapRing.thinInstanceCount = n;
     if (n > 0) {
       this.trapMesh.thinInstanceBufferUpdated("matrix");
       this.trapMesh.thinInstanceBufferUpdated("color");
+      this.trapRing.thinInstanceBufferUpdated("matrix");
+      this.trapRing.thinInstanceBufferUpdated("color");
     }
   }
 
@@ -265,7 +308,17 @@ export class StructureManager {
     for (const t of this.traps) t.active = false;
     this.barricadeMesh.thinInstanceCount = 0;
     this.trapMesh.thinInstanceCount = 0;
+    this.trapRing.thinInstanceCount = 0;
+    this.hpStripe.thinInstanceCount = 0;
   }
+}
+
+/** Material bercahaya tanpa pencahayaan (warna dari warna per-instance). */
+function glowMaterial(scene: Scene, name: string): StandardMaterial {
+  const m = new StandardMaterial(name, scene);
+  m.disableLighting = true;
+  m.emissiveColor = Color3.White();
+  return m;
 }
 
 function need(value: number | undefined, field: string): number {

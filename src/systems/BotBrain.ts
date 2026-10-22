@@ -1,5 +1,5 @@
 import { Scalar } from "@babylonjs/core";
-import { getRole, type BotRules, type RoleId } from "../data/types";
+import { getRole, type BotRules } from "../data/types";
 import type { Enemy } from "../entities/Enemy";
 import type { Markas } from "../entities/Markas";
 import type { Player } from "../entities/Player";
@@ -23,20 +23,6 @@ export interface BotWorld {
   abilityOf(p: Player): RoleAbility;
 }
 
-/** Posisi jaga tiap peran di sekitar pos ronda (sudut, radian): di pojok, tidak menutup jalan. */
-const HOME_ANGLE: Record<RoleId, number> = {
-  penjaga: Math.PI * 0.25,
-  pembangun: Math.PI * 0.75,
-  penyerang: Math.PI * 1.25,
-  penyembuh: Math.PI * 1.75,
-};
-const ARRIVE_DIST = 0.4;
-/** Jebakan untuk boss dipasang sejauh ini di depan boss (di jalurnya menuju pos ronda). */
-const BOSS_TRAP_LEAD = 3;
-/** Kelonggaran agar jebakan yang dipasang di depan boss pasti mengenainya. */
-const BOSS_REACH_SLACK = 0.4;
-const REVIVE_STAND_DIST = 1.0;
-const SAFE_TO_REVIVE_RADIUS = 4;
 
 /**
  * Bot sederhana untuk peran yang tidak dipilih manusia. Menghasilkan input seperti pemain
@@ -66,7 +52,8 @@ export class BotBrain {
     private readonly player: Player,
     private readonly rules: BotRules,
   ) {
-    const a = HOME_ANGLE[player.role.id];
+    // Posisi jaga di pojok sekitar pos ronda (tidak menutup jalan masuk).
+    const a = (rules.homeAnglesDeg[player.role.id] * Math.PI) / 180;
     this.homeX = Math.cos(a) * rules.homeRadius;
     this.homeZ = Math.sin(a) * rules.homeRadius;
   }
@@ -120,7 +107,7 @@ export class BotBrain {
     if (lure.cooldownLeft <= 0 && (crowd >= r.lureMinEnemies || bossNear)) {
       const cx = near.reduce((n, e) => n + e.position.x, 0) / near.length;
       const cz = near.reduce((n, e) => n + e.position.z, 0) / near.length;
-      if (Math.hypot(cx - p.position.x, cz - p.position.z) <= this.lureRadius * 0.8) this.input.skill2 = true;
+      if (Math.hypot(cx - p.position.x, cz - p.position.z) <= this.lureRadius * r.lureRangeFrac) this.input.skill2 = true;
       else this.moveTo(cx, cz);
       return;
     }
@@ -133,13 +120,13 @@ export class BotBrain {
     // Selama boss belum kalah, jebakan untuk musuh biasa hanya jika koin cukup untuk dua jebakan
     // (boss hanya bisa dilukai saat terjebak, jadi koin jebakannya harus selalu tersedia).
     const boss = w.enemies.boss;
-    const budget = boss ? this.trapCost : w.bossPending ? this.trapCost * 2 : this.trapCost;
+    const budget = boss ? this.trapCost : w.bossPending ? this.trapCost * r.bossTrapReserve : this.trapCost;
     if (w.coinCount >= budget) {
       const threat = boss ?? nearestToMarkas(w.enemies, w.markas, r.trapMinDistance);
       // Boss sudah dekat pos ronda: dekati boss lalu pasang jebakan tepat di depannya.
-      if (boss && Math.hypot(boss.position.x, boss.position.z) < r.trapPathDistance + BOSS_TRAP_LEAD) {
+      if (boss && Math.hypot(boss.position.x, boss.position.z) < r.trapPathDistance + r.bossTrapLead) {
         if (!w.structures.trapNear(boss.position.x, boss.position.z, boss.radius + this.trapTrigger)) {
-          const reach = this.trapPlaceDist + this.trapTrigger + boss.radius - BOSS_REACH_SLACK;
+          const reach = this.trapPlaceDist + this.trapTrigger + boss.radius - r.bossReachSlack;
           if (this.moveTo(boss.position.x, boss.position.z, reach) && this.aimAt(boss.position.x, boss.position.z)) {
             this.input.skill2 = true;
           }
@@ -152,7 +139,7 @@ export class BotBrain {
         const ux = dx / len;
         const uz = dz / len;
         // Boss yang masih jauh dijebak lebih awal di jalurnya (bot sempat menjauh dari hantamannya).
-        const along = boss ? Math.max(r.trapPathDistance, len - BOSS_TRAP_LEAD) : r.trapPathDistance;
+        const along = boss ? Math.max(r.trapPathDistance, len - r.bossTrapLead) : r.trapPathDistance;
         const tx = w.markas.box.cx + ux * along;
         const tz = w.markas.box.cz + uz * along;
         if (!w.structures.trapNear(tx, tz, r.trapMinDistance)) {
@@ -200,12 +187,12 @@ export class BotBrain {
       // Teman kritis lebih dulu, lalu pos ronda di bawah ambang.
       const ally = w.players.find((q) => q !== p && !q.downed && q.hp / q.maxHp < r.healTeammateBelow);
       if (ally) {
-        if (this.moveTo(ally.position.x, ally.position.z, this.healRadius * 0.6)) this.input.skill1 = true;
+        if (this.moveTo(ally.position.x, ally.position.z, this.healRadius * r.healApproachFrac)) this.input.skill1 = true;
         return;
       }
       const m = w.markas;
       if (m.hp / m.maxHp < r.healMarkasBelow) {
-        if (distanceToBox(p.position.x, p.position.z, m.box) <= this.healRadius * 0.8) this.input.skill1 = true;
+        if (distanceToBox(p.position.x, p.position.z, m.box) <= this.healRadius * r.healMarkasRangeFrac) this.input.skill1 = true;
         else this.moveTo(m.box.cx, m.box.cz);
         return;
       }
@@ -255,8 +242,8 @@ export class BotBrain {
     );
     if (!downed) return false;
     const supportRole = p.role.id === "penyembuh" || p.role.id === "pembangun";
-    if (!supportRole && w.enemies.countWithin(p.position.x, p.position.z, SAFE_TO_REVIVE_RADIUS) > 0) return false;
-    this.moveTo(downed.position.x, downed.position.z, REVIVE_STAND_DIST);
+    if (!supportRole && w.enemies.countWithin(p.position.x, p.position.z, r.safeToReviveRadius) > 0) return false;
+    this.moveTo(downed.position.x, downed.position.z, r.reviveStandDist);
     return true;
   }
 
@@ -280,7 +267,7 @@ export class BotBrain {
   }
 
   /** Gerak ke titik (dibatasi radius jaga dari pos ronda). true jika sudah sampai. */
-  private moveTo(x: number, z: number, arrive = ARRIVE_DIST): boolean {
+  private moveTo(x: number, z: number, arrive = this.rules.arriveDist): boolean {
     const leash = this.rules.leashRadius;
     const d0 = Math.hypot(x, z);
     if (d0 > leash) {

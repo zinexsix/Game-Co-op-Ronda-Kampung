@@ -5,7 +5,6 @@ import type { Enemy } from "../entities/Enemy";
 import type { EnemyManager } from "./EnemyManager";
 
 const PROJECTILE_HEIGHT = 0.55; // setinggi badan tikus
-const PROJECTILE_THICKNESS = 0.12; // tambahan radius saat cek kena
 
 interface Projectile {
   active: boolean;
@@ -17,6 +16,8 @@ interface Projectile {
   travelled: number;
   range: number;
   damage: number;
+  /** Tambahan radius saat cek kena (roles.json hitThickness). */
+  thickness: number;
   source?: RoleId;
 }
 
@@ -36,7 +37,7 @@ export class ProjectileManager {
     private readonly onHit: (e: Enemy, x: number, z: number, killed: boolean) => void,
   ) {
     this.pool = Array.from({ length: capacity }, () => ({
-      active: false, x: 0, z: 0, dirX: 0, dirZ: 1, speed: 0, travelled: 0, range: 0, damage: 0,
+      active: false, x: 0, z: 0, dirX: 0, dirZ: 1, speed: 0, travelled: 0, range: 0, damage: 0, thickness: 0,
     }));
     // Batang cahaya memanjang searah gerak (12 segitiga).
     this.mesh = MeshBuilder.CreateBox("projectile", { width: 0.2, height: 0.2, depth: 0.9 }, scene);
@@ -55,7 +56,9 @@ export class ProjectileManager {
     return this.mesh.thinInstanceCount;
   }
 
-  fire(x: number, z: number, dirX: number, dirZ: number, speed: number, range: number, damage: number, source?: RoleId): void {
+  fire(
+    x: number, z: number, dirX: number, dirZ: number, speed: number, range: number, damage: number, thickness: number, source?: RoleId,
+  ): void {
     const p = this.pool.find((q) => !q.active);
     if (!p) return;
     p.active = true;
@@ -67,6 +70,7 @@ export class ProjectileManager {
     p.travelled = 0;
     p.range = range;
     p.damage = damage;
+    p.thickness = thickness;
     p.source = source;
   }
 
@@ -78,7 +82,7 @@ export class ProjectileManager {
       const nx = p.x + p.dirX * step;
       const nz = p.z + p.dirZ * step;
       // Sapu ruas gerak frame ini agar proyektil cepat tidak melompati musuh.
-      const hit = enemies.sweepHit(p.x, p.z, nx, nz, PROJECTILE_THICKNESS);
+      const hit = enemies.sweepHit(p.x, p.z, nx, nz, p.thickness);
       if (hit) {
         const hx = hit.position.x;
         const hz = hit.position.z;

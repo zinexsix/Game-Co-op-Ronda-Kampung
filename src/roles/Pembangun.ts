@@ -61,6 +61,7 @@ export class PembangunAbility implements RoleAbility {
       return false;
     }
     ctx.spendCoins(cost);
+    ctx.sound("bangun");
     ctx.effects.burst(px, 0.4, pz, 8, FX_BUILD, 3, 0.4, 0.12);
     return true;
   }

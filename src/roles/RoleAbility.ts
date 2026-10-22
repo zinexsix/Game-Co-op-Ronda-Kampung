@@ -2,6 +2,7 @@ import type { SkillData } from "../data/types";
 import type { Markas } from "../entities/Markas";
 import type { Player } from "../entities/Player";
 import type { RoleId } from "../data/types";
+import type { SoundId } from "../systems/AudioSystem";
 import type { ContributionStat } from "../systems/ContributionTracker";
 import type { Effects } from "../systems/Effects";
 import type { EnemyManager } from "../systems/EnemyManager";
@@ -26,6 +27,12 @@ export interface CombatContext {
   notify(player: Player, text: string, kind?: NoticeKind): void;
   /** Catat kontribusi peran (untuk MVP). */
   track(role: RoleId, stat: ContributionStat, amount?: number): void;
+  /** Efek suara. */
+  sound(id: SoundId): void;
+  /** Serangan Area akan mendarat (sebelum damage): untuk combo "Sapu Barikade". */
+  areaAttack(x: number, z: number, radius: number): void;
+  /** Pos ronda baru saja dipulihkan Penyembuh: untuk combo "Tahan & Pulihkan". */
+  markasHealed(): void;
 }
 
 export type NoticeKind = "info" | "koin";

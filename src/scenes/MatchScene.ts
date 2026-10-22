@@ -26,7 +26,10 @@ import { Effects, RING_COLORS } from "../systems/Effects";
 import { EnemyManager } from "../systems/EnemyManager";
 import type { InputManager } from "../systems/InputManager";
 import { LevelManager } from "../systems/LevelManager";
+import type { AudioSystem } from "../systems/AudioSystem";
 import { BotBrain, type BotWorld } from "../systems/BotBrain";
+import { ComboSystem, type ComboEvent } from "../systems/ComboSystem";
+import { distanceToObb } from "../systems/Collision";
 import { ProjectileManager } from "../systems/ProjectileManager";
 import { ScoreSystem, type LevelScore } from "../systems/ScoreSystem";
 import { StructureManager } from "../systems/StructureManager";
@@ -66,6 +69,13 @@ const BENCHMARK_COINS = 999;
 const ANNOUNCE_SEC = 2.5;
 const IMMUNE_FLASH_SEC = 0.6;
 const REGULAR_IDS = new Set(REGULAR_ENEMIES.map((e) => e.id));
+const FX_COMBO = new Color4(1, 0.9, 0.3, 1);
+/** Guncangan kamera (kekuatan m, lama dtk): pos ronda digigit, hantaman boss, combo. */
+const SHAKE_MARKAS: [number, number] = [0.12, 0.15];
+const SHAKE_SLAM: [number, number] = [0.35, 0.3];
+const SHAKE_COMBO: [number, number] = [0.15, 0.2];
+/** Partikel saat musuh kalah (dibatasi; pool partikel juga punya batas total). */
+const DEATH_PARTICLES = 6;
 
 /**
  * Satu permainan: urutan level (Level 1, Level 2, ...), pemain terpilih, markas, musuh, koin,
@@ -85,6 +95,9 @@ export class MatchScene {
   readonly score = new ScoreSystem(SCORE_RULES);
   readonly contributions = new ContributionTracker();
   readonly hints = new TutorialHints(FLOW_RULES);
+  readonly combos = new ComboSystem(GAME_RULES.combos);
+  /** Combo baru untuk HUD (teks COMBO). */
+  private comboPopups: ComboEvent[] = [];
   state: MatchState = "main";
   coinCount = 0;
   kills = 0;
@@ -114,6 +127,7 @@ export class MatchScene {
     scene: Scene,
     private readonly arena: Arena,
     private readonly input: InputManager,
+    private readonly audio: AudioSystem,
   ) {
     this.players = ROLES.map((role) => new Player(scene, role));
     for (const p of this.players) this.abilities.set(p.role.id, createAbility(p, scene));
@@ -126,14 +140,26 @@ export class MatchScene {
       onKilled: (e, source) => {
         this.kills++;
         track.add(source, "kills");
-        this.effects.burst(e.position.x, 0.4, e.position.z, 8, FX_DEATH, 4, 0.5, 0.16);
+        this.audio.play("musuhKalah");
+        this.combos.enemyKilled(this.elapsed, source, e.trappedAge, e.position.x, e.position.z);
+        this.effects.burst(e.position.x, 0.4, e.position.z, DEATH_PARTICLES, FX_DEATH, 4, 0.5, 0.16);
         // Pencuri yang kalah menjatuhkan koin curiannya juga.
         if (e.data) this.coins.drop(e.position.x, e.position.z, e.data.coinDrop + e.carried);
       },
       onDamaged: (amount, source) => track.add(source, "damage", amount),
       onAttack: (x, z, target, info) => {
-        if (info.result === "diblokir") track.add(info.victim?.role.id, "blocked", info.amount);
+        if (info.result === "diblokir") {
+          track.add(info.victim?.role.id, "blocked", info.amount);
+          if (info.victim?.role.id === "penjaga") this.combos.blocked(this.elapsed, x, z);
+          this.audio.play("kebal");
+        } else if (target === "pemain") {
+          this.audio.play("kena");
+        }
         if (target === "barikade") track.add("pembangun", "barricadeAbsorbed", info.amount);
+        if (target === "markas") {
+          this.audio.play("markas");
+          this.arena.shake(...SHAKE_MARKAS);
+        }
         const color =
           target === "markas" ? FX_BITE_MARKAS : target === "barikade" ? FX_WOOD : info.result === "diblokir" ? FX_BLOCKED : FX_BITE_PLAYER;
         this.effects.burst(x, 0.5, z, 4, color, 3, 0.3, 0.12);
@@ -142,21 +168,28 @@ export class MatchScene {
       onEscaped: (_e, coins) => this.announce(`Pencuri kabur membawa ${coins} koin!`),
       onImmune: (x, z) => {
         this.bossImmuneFlash = IMMUNE_FLASH_SEC;
+        this.audio.play("kebal");
         this.effects.burst(x, 1.5, z, 2, FX_IMMUNE, 3, 0.25, 0.12);
       },
       onBossStunned: (e) => {
         // Koin langsung masuk ke kas tim (koin di bawah kaki boss terlalu berbahaya untuk dipungut).
         const coins = e.data?.boss?.coinsOnStun ?? 0;
         this.coinCount += coins;
+        this.audio.play("bossStun");
         this.effects.rise(e.position.x, 1, e.position.z, 8, FX_COIN, 1, 0.8, 0.14);
         this.announce(`${e.data?.name ?? "Boss"} terjebak! Serang sekarang! +${coins} koin`);
       },
       onBossPhase: (e, phase) => {
         const name = e.data?.name ?? "Boss";
+        this.audio.play("boss");
         if (phase === 2) this.announce(`${name} memanggil Tikus Raksasa!`);
         if (phase === 3) this.announce(`${name} mengamuk! Jebak lagi!`);
       },
-      onSlam: (x, z, radius) => this.effects.areaBlast(x, z, radius, FX_SLAM),
+      onSlam: (x, z, radius) => {
+        this.effects.areaBlast(x, z, radius, FX_SLAM);
+        this.audio.play("area");
+        this.arena.shake(...SHAKE_SLAM);
+      },
     });
 
     // Ukuran pool proyektil dari data Penyerang (jumlah maksimal yang bisa melayang bersamaan).
@@ -169,13 +202,18 @@ export class MatchScene {
     this.coins = new CoinManager(scene, GAME_RULES.coins, (x, z, player) => {
       this.coinCount++;
       track.add(player.role.id, "coins");
+      this.audio.play("koin");
       this.effects.burst(x, 0.5, z, 5, FX_COIN, 3, 0.35, 0.1);
     });
 
     const [barricade, trap] = getRole("pembangun").skills;
     this.structures = new StructureManager(scene, barricade, trap, arena.postBox, {
-      onBarricadeBroken: (x, z) => this.effects.burst(x, 0.5, z, 14, FX_WOOD, 4, 0.6, 0.18),
+      onBarricadeBroken: (x, z) => {
+        this.effects.burst(x, 0.5, z, 10, FX_WOOD, 4, 0.6, 0.18);
+        this.audio.play("bangun");
+      },
       onTrapTriggered: (x, z, stunned) => {
+        this.audio.play("jebakan");
         track.add("pembangun", "trapsTriggered");
         track.add("pembangun", "trapStuns", stunned);
         this.effects.areaBlast(x, z, trap.radius ?? 1, RING_COLORS.trap);
@@ -221,6 +259,9 @@ export class MatchScene {
       },
       notify: (player, text, kind = "info") => this.notices.push({ slot: player.slot, text, kind }),
       track: (role, stat, amount) => track.add(role, stat, amount),
+      sound: (id) => this.audio.play(id),
+      areaAttack: (x, z, radius) => this.combos.areaAttack(this.elapsed, this.stackedAtBarricades(x, z, radius), x, z),
+      markasHealed: () => this.combos.markasHealed(this.elapsed, this.markas.box.cx, this.markas.box.cz),
     };
   }
 
@@ -265,6 +306,13 @@ export class MatchScene {
     const a = this.abilities.get(p.role.id);
     if (!a) throw new Error(`Skill peran tidak ada: ${p.role.id}`);
     return a;
+  }
+
+  /** Ambil (dan kosongkan) combo baru untuk teks COMBO di HUD. */
+  takeComboPopups(): ComboEvent[] {
+    const out = this.comboPopups;
+    this.comboPopups = [];
+    return out;
   }
 
   /** Ambil (dan kosongkan) pesan untuk HUD. */
@@ -395,9 +443,12 @@ export class MatchScene {
     this.enemies.update(dt, this.markas, this._activePlayers, this.structures, this.coins);
     this.coins.update(dt, this._activePlayers);
     this.effects.update(dt);
+    this.handleCombos();
     const boss = this.enemies.boss;
     if (boss && !this.bossAnnounced && !this.benchmark) {
       this.bossAnnounced = true;
+      this.audio.play("boss");
+      this.audio.setMood("boss");
       this.announce(`${boss.data?.name ?? "Boss"} datang! Jebak dulu, baru serang!`);
     }
     this.hints.update(dt, {
@@ -414,17 +465,45 @@ export class MatchScene {
     if (this.markas.destroyed) {
       this.state = "kalah";
       this.hints.stop();
+      this.audio.play("kalah");
+      this.audio.setMood("menu");
     } else if (this.levels.complete && !this.testMode && !this.benchmark) {
-      // Combo dihitung di Tahap 6; sementara 0.
-      this.lastLevelScore = this.score.compute(this.level.name, this.markas.hp, 0, this.elapsed, this.level.parTimeSec);
+      this.lastLevelScore = this.score.compute(this.level.name, this.markas.hp, this.combos.count, this.elapsed, this.level.parTimeSec);
       this.score.commit(this.lastLevelScore);
       this.state = "menang";
       this.hints.stop();
+      this.audio.play("menang");
+      this.audio.setMood("menu");
     }
+  }
+
+  /** Combo baru: efek visual singkat, suara, guncangan kecil, lalu antre untuk teks COMBO di HUD. */
+  private handleCombos(): void {
+    for (const c of this.combos.take()) {
+      this.effects.areaBlast(c.x, c.z, 2.5, RING_COLORS.trap);
+      this.effects.rise(c.x, 0.5, c.z, 10, FX_COMBO, 1.2, 0.9, 0.16);
+      this.audio.play("combo");
+      this.arena.shake(...SHAKE_COMBO);
+      this.comboPopups.push(c);
+    }
+  }
+
+  /** Jumlah musuh dalam radius serangan yang sedang menumpuk di barikade. */
+  private stackedAtBarricades(x: number, z: number, radius: number): number {
+    const near = GAME_RULES.combos.barricadeStackRadius;
+    let n = 0;
+    for (const e of this.enemies.pool) {
+      if (!e.active || Math.hypot(e.position.x - x, e.position.z - z) > radius + e.radius) continue;
+      if (this.structures.barricades.some((b) => b.active && distanceToObb(e.position.x, e.position.z, b) <= near + e.radius)) n++;
+    }
+    return n;
   }
 
   private resetLevelState(): void {
     this.state = "main";
+    this.combos.reset();
+    this.comboPopups = [];
+    this.audio.setMood(this.benchmark ? "diam" : "main");
     this.coinCount = this.testMode ? GAME_RULES.testMode.startCoins : 0;
     this.kills = 0;
     this.elapsed = 0;
@@ -482,6 +561,7 @@ export class MatchScene {
       p.reviveProgress = Math.max(0, Math.min(1, p.reviveProgress + rate * dt));
       if (p.reviveProgress >= 1) {
         p.revive(r.hpFraction);
+        this.audio.play("revive");
         for (const h of helpers) this.contributions.add(h.role.id, "revives");
         this.effects.areaBlast(p.position.x, p.position.z, r.radius, RING_COLORS.heal);
         this.effects.rise(p.position.x, 0.3, p.position.z, 10, FX_REVIVE, 0.6, 1, 0.14);

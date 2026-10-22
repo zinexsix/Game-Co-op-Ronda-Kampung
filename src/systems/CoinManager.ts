@@ -3,7 +3,6 @@ import { ARENA } from "../config/arena";
 import type { Player } from "../entities/Player";
 
 const SPIN_SPEED = 3; // rad/detik
-const HOP_SEC = 0.35; // lompatan kecil saat koin jatuh dari musuh
 const HOP_HEIGHT = 0.8;
 const FLOAT_HEIGHT = 0.35;
 const BLINK_LAST_SEC = 3; // berkedip sebelum hilang
@@ -22,6 +21,8 @@ export interface CoinRules {
   pickupRadius: number;
   lifetimeSec: number;
   scatter: number;
+  /** Koin bisa dipungut setelah lompatan jatuhnya selesai (detik). */
+  pickupDelaySec: number;
 }
 
 /** Koin 3D kecil yang dijatuhkan musuh; diambil pemain dengan menyentuh. Pool + thin instances. */
@@ -80,7 +81,7 @@ export class CoinManager {
     let best = -1;
     let bestD2 = Infinity;
     this.pool.forEach((c, i) => {
-      if (!c.active || c.age < HOP_SEC) return;
+      if (!c.active || c.age < this.rules.pickupDelaySec) return;
       const d2 = (c.x - x) ** 2 + (c.z - z) ** 2;
       if (d2 < bestD2) {
         bestD2 = d2;
@@ -114,7 +115,7 @@ export class CoinManager {
         continue;
       }
       // Ambil dengan menyentuh (setelah lompatan jatuh selesai). Pemain jatuh tidak bisa mengambil.
-      if (c.age >= HOP_SEC) {
+      if (c.age >= this.rules.pickupDelaySec) {
         const picker = players.find((p) => {
           if (!p.active || p.downed) return false;
           const r = p.radius + this.rules.pickupRadius;
@@ -130,7 +131,7 @@ export class CoinManager {
       }
       const left = this.rules.lifetimeSec - c.age;
       if (left < BLINK_LAST_SEC && Math.sin(this.time * BLINK_RATE * Math.PI) < 0) continue; // fase "mati" kedipan
-      const hopT = Math.min(1, c.age / HOP_SEC);
+      const hopT = Math.min(1, c.age / this.rules.pickupDelaySec);
       const y = FLOAT_HEIGHT + Math.sin(hopT * Math.PI) * HOP_HEIGHT + Math.sin(this.time * 3 + c.phase) * 0.06;
       this.tmpPos.set(c.x, y, c.z);
       Quaternion.RotationYawPitchRollToRef(this.time * SPIN_SPEED + c.phase, 0, 0, this.tmpQuat);

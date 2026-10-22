@@ -5,10 +5,13 @@
     "maxOnGround": 40,
     "pickupRadius": 0.5,
     "lifetimeSec": 20,
-    "scatter": 0.6
+    "scatter": 0.6,
+    "pickupDelaySec": 0.35
   },
   "player": {
-    "hitInvulnSec": 0.4
+    "hitInvulnSec": 0.4,
+    "turnSpeed": 14,
+    "spawns": [[-6, 4], [6, 4], [-6, -4], [6, -4]]
   },
   "revive": {
     "radius": 1.8,
@@ -38,7 +41,42 @@
     "aimToleranceRad": 0.2,
     "aimInput": 0.05,
     "preferredShootDistance": 7,
-    "bossAvoidMargin": 1.2
+    "bossAvoidMargin": 1.2,
+    "arriveDist": 0.4,
+    "bossTrapLead": 3,
+    "bossReachSlack": 0.4,
+    "reviveStandDist": 1.0,
+    "safeToReviveRadius": 4,
+    "lureRangeFrac": 0.8,
+    "healApproachFrac": 0.6,
+    "healMarkasRangeFrac": 0.8,
+    "bossTrapReserve": 2,
+    "homeAnglesDeg": { "penjaga": 45, "pembangun": 135, "penyerang": 225, "penyembuh": 315 }
+  },
+  "combos": {
+    "_note": "Combo kerja sama (tiap combo menambah score.comboPoints di levels.json).",
+    "trapKillWindowSec": 3,
+    "holdHealWindowSec": 4,
+    "barricadeStackMin": 3,
+    "barricadeStackRadius": 1.4,
+    "cooldownSec": 1.5
+  },
+  "audio": {
+    "_note": "Volume awal 0-1 (bisa diubah di menu).",
+    "master": 0.8,
+    "music": 0.45,
+    "sfx": 0.8
+  },
+  "idle": {
+    "_note": "Kembali ke menu jika tidak ada input pemain selama resetToMenuSec; peringatan muncul warnSec sebelumnya.",
+    "resetToMenuSec": 30,
+    "warnSec": 10
+  },
+  "autoQuality": {
+    "_note": "Jika FPS rata-rata di bawah minFps selama sampleSec, skala resolusi diturunkan ke langkah berikutnya.",
+    "minFps": 30,
+    "sampleSec": 3,
+    "renderScaleSteps": [0.85, 0.7, 0.6]
   },
   "mvp": {
     "_note": "Bobot poin kontribusi untuk menentukan MVP di layar hasil.",

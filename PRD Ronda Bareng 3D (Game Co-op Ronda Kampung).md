@@ -433,15 +433,15 @@ Kriteria selesai: seluruh alur bisa dimainkan dari menu sampai layar hasil denga
 Baca docs/PRD.md sebagai acuan. Kerjakan HANYA Tahap 6. Sebelum mulai, jalankan game dan perbaiki error atau warning dari Tahap 5. Setelah selesai, laporkan FPS, jelaskan cara mengetes, lalu BERHENTI.
 
 === TAHAP 6: POLES DAN OPTIMASI ===
-1. ComboSystem terpisah: (a) Jebak dan habisi (musuh terkena jebakan lalu dikalahkan Penyerang dalam 3 dtk), (b) Tahan dan pulihkan (Penjaga memblokir dan Penyembuh heal markas dalam jendela waktu yang sama), (c) Serangan area saat 3 musuh atau lebih menumpuk di barikade. Tiap combo menambah 50 skor dan memunculkan teks COMBO dengan efek visual singkat.
-2. Efek suara untuk skill, kena serangan, koin, revive, combo, boss, menang, dan kalah. Musik loop ringan. Pakai Web Audio atau file kecil berlisensi bebas. Pengaturan volume di menu.
+1. ComboSystem terpisah: (a) Jebak dan habisi (musuh terkena jebakan lalu dikalahkan Penyerang dalam 3 dtk), (b) Tahan dan pulihkan (Penjaga memblokir dan Penyembuh heal markas dalam jendela waktu yang sama), i Web Audio atau file kecil berlisensi bebas. Pengaturan volume di menu.
 3. Efek visual ringan: guncangan kamera singkat saat markas terkena serangan, partikel ringan (batasi jumlah) saat musuh kalah, penanda jelas untuk jebakan dan barikade.
 4. Reset otomatis ke menu setelah 30 dtk tanpa input.
 5. Optimasi performa: audit draw call dan jumlah segitiga, gabungkan mesh statis, pastikan instancing dan pooling dipakai di semua objek berulang, bersihkan objek dan tekstur saat berpindah level, pertimbangkan penurunan skala resolusi otomatis jika FPS turun di bawah 30.
 6. Penyeimbangan: pindahkan semua angka yang masih ada di kode ke JSON dan buat docs/BALANCE.md untuk angka yang sering disetel.
 7. Perbaiki hal yang membingungkan bagi pengunjung baru: petunjuk Level 1, keterbacaan ikon skill dan siluet peran dari kamera atas, warna pemain tidak bergantung warna saja.
 
-Kriteria selesai: combo terdeteksi dan menambah skor, ada suara dan musik dengan kontrol volume, reset otomatis berfungsi, tidak ada angka keseimbangan yang tertanam di kode, FPS ≥ 30 di semua level.
+Kriteria selesai: combo terdeteksi dan menambah skor, ada suara dan musik dengan kontrol volume, reset otomatis berfungsi, tidak ada angka keseimbangan yang tertanam di kode, FPS ≥ 30 di semua level.(c) Serangan area saat 3 musuh atau lebih menumpuk di barikade. Tiap combo menambah 50 skor dan memunculkan teks COMBO dengan efek visual singkat.
+2. Efek suara untuk skill, kena serangan, koin, revive, combo, boss, menang, dan kalah. Musik loop ringan. Paka
 ```
 
 ### Prompt 7: Persiapan pameran

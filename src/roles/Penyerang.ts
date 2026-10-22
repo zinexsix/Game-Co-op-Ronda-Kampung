@@ -3,8 +3,6 @@ import type { Player } from "../entities/Player";
 import type { PlayerInputState, PlayerPresses } from "../systems/InputManager";
 import { need, skillStatus, tickCooldowns, type CombatContext, type RoleAbility, type SkillStatus } from "./RoleAbility";
 
-const MUZZLE_OFFSET = 0.3; // proyektil keluar sedikit di depan tubuh
-
 /**
  * Penyerang.
  * Skill 1 Serangan Cepat: tahan tombol untuk menembak beruntun searah hadap.
@@ -16,6 +14,8 @@ export class PenyerangAbility implements RoleAbility {
   private readonly rapidDamage: number;
   private readonly projectileSpeed: number;
   private readonly range: number;
+  private readonly muzzleOffset: number;
+  private readonly hitThickness: number;
   private readonly areaRadius: number;
   private readonly areaCooldown: number;
   private readonly areaDamage: number;
@@ -27,6 +27,8 @@ export class PenyerangAbility implements RoleAbility {
     this.rapidDamage = need(s1.damage, "serangan_cepat.damage");
     this.projectileSpeed = need(s1.projectileSpeed, "serangan_cepat.projectileSpeed");
     this.range = need(s1.range, "serangan_cepat.range");
+    this.muzzleOffset = need(s1.muzzleOffset, "serangan_cepat.muzzleOffset");
+    this.hitThickness = need(s1.hitThickness, "serangan_cepat.hitThickness");
     this.areaRadius = need(s2.radius, "serangan_area.radius");
     this.areaCooldown = need(s2.cooldown, "serangan_area.cooldown");
     this.areaDamage = need(s2.damage, "serangan_area.damage");
@@ -53,7 +55,8 @@ export class PenyerangAbility implements RoleAbility {
         this.fireTimer = this.fireInterval;
         const fx = player.facingX;
         const fz = player.facingZ;
-        const offset = player.radius + MUZZLE_OFFSET;
+        const offset = player.radius + this.muzzleOffset;
+        ctx.sound("tembak");
         ctx.projectiles.fire(
           player.position.x + fx * offset,
           player.position.z + fz * offset,
@@ -62,6 +65,7 @@ export class PenyerangAbility implements RoleAbility {
           this.projectileSpeed,
           this.range,
           this.rapidDamage,
+          this.hitThickness,
           player.role.id,
         );
       }
@@ -72,6 +76,8 @@ export class PenyerangAbility implements RoleAbility {
       area.cooldownLeft = this.areaCooldown;
       const { x, z } = player.position;
       ctx.effects.areaBlast(x, z, this.areaRadius);
+      ctx.sound("area");
+      ctx.areaAttack(x, z, this.areaRadius);
       ctx.enemies.damageInRadius(x, z, this.areaRadius, this.areaDamage, player.role.id);
     }
   }

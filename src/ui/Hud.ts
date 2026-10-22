@@ -6,8 +6,11 @@ import { SLOT_COLORS } from "./slotColors";
 
 const LOW_HP_RATIO = 0.3;
 const NOTICE_SEC = 1.8;
-/** Tinggi bar revive di atas karakter (meter). */
-const REVIVE_BAR_HEIGHT = 2.4;
+/** Tinggi bar revive & penanda pemain di atas karakter (meter). */
+const REVIVE_BAR_HEIGHT = 3.0;
+const TAG_HEIGHT = 2.4;
+/** Lama teks COMBO tampil (ms). */
+const COMBO_POPUP_MS = 1400;
 
 /** Proyeksi titik dunia ke piksel layar (CSS); null jika di luar layar. */
 export type Projector = (x: number, y: number, z: number) => { x: number; y: number } | null;
@@ -29,6 +32,8 @@ interface PlayerCard {
   skills: SkillView[];
   revive: HTMLDivElement;
   reviveFill: HTMLDivElement;
+  /** Penanda "P1 ⚔️" melayang di atas karakter. */
+  tag: HTMLDivElement;
   reviveText: HTMLSpanElement;
   lastHp: number;
   lastDowned: boolean;
@@ -51,6 +56,9 @@ export class Hud {
   private readonly testBadge: HTMLDivElement;
   private readonly levelText: HTMLSpanElement;
   private readonly banner: HTMLDivElement;
+  private readonly comboText: HTMLSpanElement;
+  private readonly comboLayer: HTMLDivElement;
+  private lastCombos = -1;
   private readonly bossPanel: HTMLDivElement;
   private readonly bossName: HTMLSpanElement;
   private readonly bossFill: HTMLDivElement;
@@ -81,6 +89,7 @@ export class Hud {
         <div class="hud-info">
           <span class="level-info"></span>
           <span class="coin-count"></span>
+          <span class="combo-count"></span>
           <span class="wave-info"></span>
         </div>
         <div class="boss-panel" hidden>
@@ -91,6 +100,7 @@ export class Hud {
         <div class="test-badge" hidden>MODE UJI · ${SYSTEM_KEYS.testSpawn} munculkan tikus · ${SYSTEM_KEYS.testCoins} +koin & reset cooldown · ${SYSTEM_KEYS.testDown} jatuhkan pemain · ${SYSTEM_KEYS.toggleTestMode} keluar</div>
       </div>
       <div class="hud-banner" hidden></div>
+      <div class="combo-layer"></div>
       <div class="player-cards"></div>`;
     parent.appendChild(this.el);
     this.basePanel = this.el.querySelector(".base-panel") as HTMLDivElement;
@@ -101,6 +111,8 @@ export class Hud {
     this.testBadge = this.el.querySelector(".test-badge") as HTMLDivElement;
     this.levelText = this.el.querySelector(".level-info") as HTMLSpanElement;
     this.banner = this.el.querySelector(".hud-banner") as HTMLDivElement;
+    this.comboText = this.el.querySelector(".combo-count") as HTMLSpanElement;
+    this.comboLayer = this.el.querySelector(".combo-layer") as HTMLDivElement;
     this.bossPanel = this.el.querySelector(".boss-panel") as HTMLDivElement;
     this.bossName = this.el.querySelector(".boss-name") as HTMLSpanElement;
     this.bossFill = this.el.querySelector(".boss-fill") as HTMLDivElement;
@@ -121,6 +133,8 @@ export class Hud {
     this.lastWave = "";
     this.lastBanner = null;
     this.banner.hidden = true;
+    this.lastCombos = -1;
+    this.comboLayer.innerHTML = "";
     this.lastBoss = "";
     this.bossPanel.hidden = true;
     this.el.classList.remove("has-boss");
@@ -169,6 +183,7 @@ export class Hud {
     }
 
     this.updateBoss(match);
+    this.updateCombos(match, project);
 
     const bannerText = match.bannerText;
     if (bannerText !== this.lastBanner) {
@@ -194,6 +209,34 @@ export class Hud {
     }
 
     for (const c of this.cards) this.updateCard(c, match, dt, project);
+  }
+
+  /** Jumlah combo level ini + teks COMBO yang muncul di atas lokasi combo. */
+  private updateCombos(match: MatchScene, project: Projector): void {
+    if (match.combos.count !== this.lastCombos) {
+      this.lastCombos = match.combos.count;
+      this.comboText.textContent = `✨ Combo ${match.combos.count}`;
+      if (match.combos.count > 0) shake(this.comboText);
+    }
+    const points = match.score.comboPoints;
+    for (const c of match.takeComboPopups()) {
+      const el = document.createElement("div");
+      el.className = "combo-popup";
+      el.innerHTML = `<b>COMBO!</b><span>${c.label} +${points}</span>`;
+      const s = project(c.x, TAG_HEIGHT, c.z);
+      el.style.left = `${s ? s.x : window.innerWidth / 2}px`;
+      el.style.top = `${s ? s.y : window.innerHeight / 3}px`;
+      this.comboLayer.appendChild(el);
+      el.animate(
+        [
+          { transform: "translate(-50%, -50%) scale(0.4)", opacity: 0 },
+          { transform: "translate(-50%, -80%) scale(1.15)", opacity: 1, offset: 0.2 },
+          { transform: "translate(-50%, -110%) scale(1)", opacity: 1, offset: 0.75 },
+          { transform: "translate(-50%, -140%) scale(0.95)", opacity: 0 },
+        ],
+        { duration: COMBO_POPUP_MS, easing: "ease-out" },
+      ).onfinish = () => el.remove();
+    }
   }
 
   /** Bar HP boss + fase + status: hanya bisa dilukai saat terjebak (stun). */
@@ -244,6 +287,7 @@ export class Hud {
       el.innerHTML = `
         <div class="skill-fill"></div>
         <kbd>${keys[i]}</kbd>
+        <span class="skill-icon">${s.data.icon ?? ""}</span>
         <span class="skill-name">${s.data.name}</span>
         <span class="skill-time"></span>`;
       skillRow.appendChild(el);
@@ -264,6 +308,14 @@ export class Hud {
     revive.innerHTML = `<span class="revive-text"></span><div class="revive-bar"><div class="revive-fill"></div></div>`;
     this.floatLayer.appendChild(revive);
 
+    // Penanda pemain: nomor slot berbentuk lencana + ikon peran (tidak bergantung warna saja).
+    const tag = document.createElement("div");
+    tag.className = `player-tag${player.isBot ? " bot" : ""}`;
+    tag.style.setProperty("--slot", SLOT_COLORS[player.slot]);
+    tag.style.setProperty("--role", player.role.color);
+    tag.innerHTML = `<span class="tag-slot">${player.isBot ? "🤖" : `P${player.slot + 1}`}</span><span class="tag-icon">${player.role.icon}</span>`;
+    this.floatLayer.appendChild(tag);
+
     return {
       player,
       root,
@@ -275,6 +327,7 @@ export class Hud {
       revive,
       reviveFill: revive.querySelector(".revive-fill") as HTMLDivElement,
       reviveText: revive.querySelector(".revive-text") as HTMLSpanElement,
+      tag,
       lastHp: -1,
       lastDowned: false,
       lastRevive: -1,
@@ -300,6 +353,11 @@ export class Hud {
       c.noticeTimer -= dt;
       if (c.noticeTimer <= 0) c.notice.hidden = true;
     }
+
+    // Penanda pemain mengikuti karakter (disembunyikan saat jatuh: bar revive yang tampil).
+    const t = project(p.position.x, TAG_HEIGHT, p.position.z);
+    c.tag.hidden = !t || p.downed;
+    if (t) c.tag.style.transform = `translate(${t.x}px, ${t.y}px) translate(-50%, -100%)`;
 
     // Bar revive mengikuti posisi karakter di layar.
     if (p.downed) {

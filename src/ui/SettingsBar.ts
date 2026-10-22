@@ -4,7 +4,9 @@ import { QUALITY_PRESETS, type QualityLevel } from "../config/quality";
 export class SettingsBar {
   private readonly buttons = new Map<QualityLevel, HTMLButtonElement>();
 
-  constructor(parent: HTMLElement, onQuality: (level: QualityLevel) => void, onFullscreen: () => void) {
+  private readonly muteBtn: HTMLButtonElement;
+
+  constructor(parent: HTMLElement, onQuality: (level: QualityLevel) => void, onFullscreen: () => void, onMute: () => void) {
     const bar = document.createElement("div");
     bar.className = "settings-bar";
     const label = document.createElement("span");
@@ -16,8 +18,14 @@ export class SettingsBar {
       this.buttons.set(level, btn);
       bar.appendChild(btn);
     }
+    this.muteBtn = makeButton("🔊 Suara", onMute);
+    bar.appendChild(this.muteBtn);
     bar.appendChild(makeButton("Layar penuh", onFullscreen));
     parent.appendChild(bar);
+  }
+
+  setMuted(muted: boolean): void {
+    this.muteBtn.textContent = muted ? "🔇 Bisu" : "🔊 Suara";
   }
 
   setActive(level: QualityLevel): void {

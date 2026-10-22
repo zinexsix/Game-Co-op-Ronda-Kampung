@@ -76,6 +76,7 @@ export class PenjagaAbility implements RoleAbility {
       if (presses.skill1 && shield.cooldownLeft <= 0) {
         shield.cooldownLeft = this.shieldCooldown;
         player.raiseShield(this.shieldDuration, this.shieldArc);
+        ctx.sound("perisai");
       }
       if (presses.skill2 && lure.cooldownLeft <= 0) {
         lure.cooldownLeft = this.lureCooldown;
@@ -83,6 +84,7 @@ export class PenjagaAbility implements RoleAbility {
         const { x, z } = player.position;
         const lured = ctx.enemies.lureWithin(x, z, this.lureRadius, player, this.lureDuration);
         ctx.track(player.role.id, "lured", lured);
+        ctx.sound("pancing");
         ctx.effects.areaBlast(x, z, this.lureRadius, RING_COLORS.lure);
       }
     } else {

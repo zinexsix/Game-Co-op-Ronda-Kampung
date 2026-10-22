@@ -17,7 +17,8 @@
     "screenInputDelaySec": 1.0,
     "hintSec": 5,
     "hintGapSec": 1.5,
-    "resultIdleSec": 30
+    "resultIdleSec": 30,
+    "hintTriggers": { "areaCrowd": 3, "lureCrowd": 2, "shieldDangerRadius": 3 }
   },
   "levels": [
     {
@@ -40,7 +41,7 @@
         { "at": 30, "groups": [{ "enemy": "tikus", "count": 8, "interval": 0.8, "points": ["kiri", "kanan", "atas", "bawah", "kiriAtas", "kananBawah"] }] }
       ],
       "hints": [
-        { "id": "mulai", "text": "Lindungi pos ronda dari tikus! Bergeraklah dengan tombol arah masing-masing." },
+        { "id": "mulai", "text": "Lindungi pos ronda dari tikus! Cari tanda P1-P4 di atas kepalamu, lalu bergerak." },
         { "id": "koin", "text": "Sentuh koin untuk mengambilnya; koin dipakai bersama satu tim." },
         { "id": "tembak", "role": "penyerang", "skill": 1, "text": "{P} Penyerang: tahan {K} untuk menembak ke arah hadap." },
         { "id": "area", "role": "penyerang", "skill": 2, "text": "{P} Penyerang: tekan {K} saat tikus berkerumun untuk Serangan Area." },
@@ -50,7 +51,8 @@
         { "id": "jebakan", "role": "pembangun", "skill": 2, "text": "{P} Pembangun: tekan {K} untuk memasang jebakan yang membuat tikus pusing." },
         { "id": "heal", "role": "penyembuh", "skill": 1, "text": "{P} Penyembuh: tekan {K} untuk memulihkan pos ronda atau teman di dekatmu." },
         { "id": "buff", "role": "penyembuh", "skill": 2, "text": "{P} Penyembuh: tekan {K} agar seluruh tim berlari lebih cepat." },
-        { "id": "revive", "text": "Ada yang jatuh! Berdiri di dekatnya beberapa detik untuk menghidupkannya." }
+        { "id": "revive", "text": "Ada yang jatuh! Berdiri di dekatnya beberapa detik untuk menghidupkannya." },
+        { "id": "combo", "text": "Tikus terjebak! Kalahkan dengan Penyerang dalam 3 detik untuk COMBO +50." }
       ]
     },
     {

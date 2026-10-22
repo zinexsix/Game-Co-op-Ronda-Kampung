@@ -1,7 +1,6 @@
-import type { LevelData, PlayerScaling } from "../data/types";
+import { ENEMY_AI, type LevelData, type PlayerScaling } from "../data/types";
 import type { EnemyManager } from "./EnemyManager";
 
-const SPAWN_JITTER = 1.5;
 
 /** Antrean satu kelompok musuh yang sedang dimunculkan. */
 interface SpawnQueue {
@@ -123,8 +122,8 @@ export class LevelManager {
         const [x, z] = q.points[q.next % q.points.length];
         const e = this.enemies.spawnAt(
           q.enemy,
-          x + (Math.random() - 0.5) * SPAWN_JITTER,
-          z + (Math.random() - 0.5) * SPAWN_JITTER,
+          x + (Math.random() - 0.5) * ENEMY_AI.spawnJitter,
+          z + (Math.random() - 0.5) * ENEMY_AI.spawnJitter,
           this.scaling.hp,
         );
         if (!e) {

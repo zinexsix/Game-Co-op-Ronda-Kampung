@@ -54,7 +54,8 @@ export class RoleSelectScene {
       card.innerHTML = `
         <div class="role-icon">${role.icon}</div>
         <div class="role-name">${role.name}</div>
-        <div class="role-desc">${role.description}</div>`;
+        <div class="role-desc">${role.description}</div>
+        <div class="role-skills">${role.skills.map((s) => `<span>${s.icon ?? ""} ${s.name}</span>`).join("")}</div>`;
       const markers = document.createElement("div");
       markers.className = "role-markers";
       card.appendChild(markers);
