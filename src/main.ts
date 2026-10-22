@@ -1,17 +1,17 @@
 import { Engine, SceneInstrumentation } from "@babylonjs/core";
 import "./style.css";
-import { ARENA } from "./config/arena";
 import { SYSTEM_KEYS } from "./config/controls";
 import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualityLevel } from "./config/quality";
-import { MAX_ACTIVE_ENEMIES, ROLES, getEnemy } from "./data/types";
-import { PLAYER_SPAWNS, Player } from "./entities/Player";
+import { ROLES, type RoleId } from "./data/types";
 import { createArenaScene } from "./scenes/ArenaScene";
+import { MatchScene, type Assignment } from "./scenes/MatchScene";
+import { RoleSelectScene } from "./scenes/RoleSelectScene";
 import { Benchmark, type BenchResult } from "./systems/Benchmark";
-import { clampToArena, pushOutOfBox, separateCircles } from "./systems/Collision";
-import { EnemyManager } from "./systems/EnemyManager";
 import { InputManager } from "./systems/InputManager";
 import { QualityManager } from "./systems/QualityManager";
 import { DebugOverlay, countRenderedTriangles, readDrawCalls, renderSize } from "./ui/DebugOverlay";
+import { Hud } from "./ui/Hud";
+import { LoseScreen } from "./ui/LoseScreen";
 import { SettingsBar, toggleFullscreen } from "./ui/SettingsBar";
 
 const params = new URLSearchParams(location.search);
@@ -33,40 +33,79 @@ const gpuName = engine.getGlInfo().renderer;
 const arena = createArenaScene(engine, QUALITY_PRESETS.sedang.shadowMapSize);
 const { scene } = arena;
 
-// --- Pemain: 4 peran tetap untuk Tahap 1 (pemilihan peran menyusul) ---
+// --- Sistem permainan: semua aset dibuat di awal, lalu dipakai ulang ---
 const input = new InputManager();
-const players = ROLES.map((role, i) => new Player(scene, i, role, PLAYER_SPAWNS[i]));
-
-// --- Musuh: pool 30, satu draw call via thin instances ---
-const enemies = new EnemyManager(scene, MAX_ACTIVE_ENEMIES, getEnemy("tikus"));
+const match = new MatchScene(scene, arena, input);
 
 // --- Kualitas & UI ---
 const quality = new QualityManager(engine, arena.sun, arena.shadows, initialQuality);
-quality.addDynamicCasters([...players.flatMap((p) => p.meshes.slice(0, 3)), enemies.renderMesh]);
+quality.addDynamicCasters([...match.players.flatMap((p) => p.meshes.slice(0, 3)), match.enemies.renderMesh]);
 
 const settings = new SettingsBar(uiRoot, (l) => quality.apply(l), toggleFullscreen);
 settings.setActive(quality.level);
 quality.onChange((l) => settings.setActive(l));
+
+const hud = new Hud(uiRoot);
+const roleSelect = new RoleSelectScene(uiRoot, input, (assignments) => startMatch(assignments));
+const lose = new LoseScreen(
+  uiRoot,
+  input,
+  () => {
+    match.restart();
+    hud.show(match);
+  },
+  () => openRoleSelect(match.currentAssignments),
+);
 
 const debug = new DebugOverlay(uiRoot);
 const status = document.createElement("div");
 status.className = "status";
 uiRoot.appendChild(status);
 
+type AppState = "pilihPeran" | "pertandingan";
+let appState: AppState = "pilihPeran";
+
+function startMatch(assignments: Assignment[]): void {
+  roleSelect.hide();
+  lose.hide();
+  match.start(assignments);
+  hud.show(match);
+  appState = "pertandingan";
+}
+
+function openRoleSelect(previous: readonly Assignment[] = []): void {
+  const keep = [...previous];
+  match.stop();
+  hud.hide();
+  lose.hide();
+  roleSelect.show(keep);
+  appState = "pilihPeran";
+}
+
+// --- Benchmark: 4 pemain + musuh penuh + skill aktif ---
 const benchmark = new Benchmark(
   input,
   (l) => quality.apply(l),
   () => renderSize(engine),
   (text) => (status.textContent = text),
-  (results) => showBenchResults(results),
+  (results) => {
+    match.setBenchmarkMode(false);
+    openRoleSelect();
+    showBenchResults(results);
+  },
 );
+
+function startBenchmark(order?: QualityLevel[]): void {
+  if (benchmark.running) return;
+  startMatch(ROLES.map((r, slot) => ({ slot, roleId: r.id })));
+  match.setBenchmarkMode(true);
+  benchmark.start(order);
+}
 
 input.onSystemKey(SYSTEM_KEYS.toggleDebug, () => debug.toggle());
 input.onSystemKey(SYSTEM_KEYS.toggleQuality, () => quality.toggle());
 input.onSystemKey(SYSTEM_KEYS.toggleFullscreen, toggleFullscreen);
-input.onSystemKey(SYSTEM_KEYS.runBenchmark, () => {
-  if (!benchmark.running) benchmark.start();
-});
+input.onSystemKey(SYSTEM_KEYS.runBenchmark, () => startBenchmark());
 
 const instr = new SceneInstrumentation(scene);
 instr.captureFrameTime = false;
@@ -82,14 +121,19 @@ scene.onBeforeRenderObservable.add(() => {
   benchmark.tick(rawDt, totalTime); // benchmark mengukur frame time asli
   input.update();
 
-  players.forEach((p, i) => p.update(dt, input.getState(i)));
-  separateCircles(players);
-  for (const p of players) {
-    pushOutOfBox(p, arena.postBox);
-    clampToArena(p, ARENA.halfWidth, ARENA.halfDepth);
+  if (appState === "pilihPeran") {
+    roleSelect.update(dt);
+    return;
   }
-
-  enemies.update(dt, arena.postCenter);
+  match.update(dt);
+  hud.update(match);
+  if (match.state === "kalah" && !lose.shown) {
+    lose.show(
+      { waves: match.waves.wave, kills: match.kills, coins: match.coinCount, seconds: match.elapsed },
+      match.activePlayers.map((p) => p.slot),
+    );
+  }
+  lose.update(dt);
 });
 
 scene.onAfterRenderObservable.add(() => {
@@ -101,14 +145,18 @@ scene.onAfterRenderObservable.add(() => {
       fps: engine.getFps(),
       drawCalls: readDrawCalls(instr),
       triangles: countRenderedTriangles(scene),
-      activeEnemies: enemies.activeCount,
-      enemyCapacity: enemies.capacity,
+      activeEnemies: match.enemies.activeCount,
+      enemyCapacity: match.enemies.capacity,
       quality: quality.level,
       renderWidth: size.w,
       renderHeight: size.h,
       gpu: gpuName,
+      projectiles: match.projectiles.activeCount,
+      coinsOnGround: match.coins.activeCount,
+      particles: match.effects.activeParticles,
+      enemyTriangles: match.enemies.modelTriangles,
     },
-    players,
+    match.activePlayers,
     input,
   );
 });
@@ -130,17 +178,30 @@ function showBenchResults(results: BenchResult[]): void {
   (window as unknown as { __benchResult: BenchResult[] }).__benchResult = results;
 }
 
-// Info anggaran segitiga karakter ke konsol (cek batas 800/karakter).
+// Info anggaran segitiga ke konsol (batas: karakter 800, musuh 300 untuk Tikus Raksasa).
 console.log(
   "Segitiga per karakter:",
-  players.map((p) => `${p.role.name}=${p.triangleCount}`).join(", "),
+  match.players.map((p) => `${p.role.name}=${p.triangleCount}`).join(", "),
+  `· Tikus Raksasa=${match.enemies.modelTriangles}`,
 );
+
+// Akses dari konsol browser saat pengembangan (tidak ada di build pameran).
+if (import.meta.env.DEV) {
+  (window as unknown as Record<string, unknown>).__game = { match, input, engine, roleSelect, lose };
+}
+
+// Untuk tes: ?roles=penyerang,penjaga langsung main (slot P1, P2, ... sesuai urutan).
+const quickRoles = (params.get("roles") ?? "")
+  .split(",")
+  .filter((id): id is RoleId => ROLES.some((r) => r.id === id));
+if (quickRoles.length > 0) startMatch(quickRoles.map((roleId, slot) => ({ slot, roleId })));
+else openRoleSelect();
 
 // ?bench atau ?bench=sedang,rendah (urutan kustom).
 if (params.has("bench")) {
   const order = (params.get("bench") || "rendah,sedang")
     .split(",")
     .filter((l): l is QualityLevel => l === "rendah" || l === "sedang");
-  benchmark.start(order.length ? order : undefined);
+  startBenchmark(order.length ? order : undefined);
 }
 if (params.has("debug")) debug.toggle();

@@ -14,6 +14,10 @@ export interface DebugStats {
   renderWidth: number;
   renderHeight: number;
   gpu: string;
+  projectiles: number;
+  coinsOnGround: number;
+  particles: number;
+  enemyTriangles: number;
 }
 
 const REFRESH_SEC = 0.25;
@@ -37,20 +41,21 @@ export class DebugOverlay {
     this.timer = 0;
   }
 
-  update(dt: number, stats: DebugStats, players: Player[], input: InputManager): void {
+  update(dt: number, stats: DebugStats, players: readonly Player[], input: InputManager): void {
     if (!this.visible) return;
     this.timer -= dt;
     if (this.timer > 0) return;
     this.timer = REFRESH_SEC;
 
     const rows = players
-      .map((p, i) => {
+      .map((p) => {
+        const i = p.slot;
         const s = input.getState(i);
         const b = PLAYER_BINDINGS[i];
         const dir = s.connected ? arrow(s.moveX, s.moveZ) : "—";
         const move = s.connected ? `${s.moveX.toFixed(2)}, ${s.moveZ.toFixed(2)}` : "tidak terhubung";
         return `<tr style="color:${p.role.color}">
-          <td>P${i + 1}</td><td>${p.role.name}</td><td>${b.label}</td>
+          <td>P${i + 1}</td><td>${p.role.name}</td><td>HP ${Math.ceil(p.hp)}${p.downed ? " (jatuh)" : ""}</td><td>${b.label}</td>
           <td class="dir">${dir}</td><td>${move}</td>
           <td class="${s.skill1 ? "on" : ""}">S1</td><td class="${s.skill2 ? "on" : ""}">S2</td></tr>`;
       })
@@ -61,7 +66,8 @@ export class DebugOverlay {
     this.el.innerHTML = `
       <div class="big ${fpsClass}">${stats.fps.toFixed(0)} FPS</div>
       <div>Draw call: <b>${stats.drawCalls}</b> · Segitiga: <b>${stats.triangles.toLocaleString("id-ID")}</b></div>
-      <div>Musuh aktif: <b>${stats.activeEnemies}/${stats.enemyCapacity}</b></div>
+      <div>Musuh aktif: <b>${stats.activeEnemies}/${stats.enemyCapacity}</b> · Model tikus ${stats.enemyTriangles} segitiga</div>
+      <div>Proyektil ${stats.projectiles} · Koin di tanah ${stats.coinsOnGround} · Partikel ${stats.particles}</div>
       <div>Kualitas: <b>${QUALITY_PRESETS[stats.quality].label}</b> · Render ${stats.renderWidth}×${stats.renderHeight}</div>
       <div class="keys">GPU: ${stats.gpu}</div>
       <table>${rows}</table>

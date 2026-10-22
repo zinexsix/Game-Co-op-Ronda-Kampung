@@ -16,7 +16,7 @@ export class SettingsBar {
       this.buttons.set(level, btn);
       bar.appendChild(btn);
     }
-    bar.appendChild(makeButton("⛶ Layar penuh", onFullscreen));
+    bar.appendChild(makeButton("Layar penuh", onFullscreen));
     parent.appendChild(bar);
   }
 

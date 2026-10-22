@@ -21,6 +21,13 @@ export function clampToArena(b: CircleBody, halfWidth: number, halfDepth: number
   p.z = Math.max(-halfDepth + b.radius, Math.min(halfDepth - b.radius, p.z));
 }
 
+/** Jarak titik ke tepi kotak (0 jika di dalam kotak). */
+export function distanceToBox(x: number, z: number, box: StaticBox): number {
+  const dx = Math.max(Math.abs(x - box.cx) - box.halfX, 0);
+  const dz = Math.max(Math.abs(z - box.cz) - box.halfZ, 0);
+  return Math.hypot(dx, dz);
+}
+
 /** Dorong lingkaran keluar dari kotak statis (mis. pos ronda). */
 export function pushOutOfBox(b: CircleBody, box: StaticBox): void {
   const p = b.position;
@@ -43,6 +50,18 @@ export function pushOutOfBox(b: CircleBody, box: StaticBox): void {
   const penZ = box.halfZ - Math.abs(dz) + b.radius;
   if (penX < penZ) p.x += Math.sign(dx || 1) * penX;
   else p.z += Math.sign(dz || 1) * penZ;
+}
+
+/** Dorong lingkaran `b` keluar dari lingkaran `fixed` (yang tidak ikut bergeser). */
+export function pushOutOfCircle(b: CircleBody, fixed: CircleBody): void {
+  const dx = b.position.x - fixed.position.x;
+  const dz = b.position.z - fixed.position.z;
+  const minD = b.radius + fixed.radius;
+  const d2 = dx * dx + dz * dz;
+  if (d2 >= minD * minD || d2 < 1e-8) return;
+  const d = Math.sqrt(d2);
+  b.position.x += (dx / d) * (minD - d);
+  b.position.z += (dz / d) * (minD - d);
 }
 
 /** Pisahkan lingkaran yang saling tumpuk (dorong setengah-setengah). O(n^2), cukup untuk 4 pemain. */

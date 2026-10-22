@@ -10,6 +10,17 @@ export interface PlayerInputState {
   connected: boolean;
 }
 
+/** Tombol yang BARU ditekan pada frame ini (untuk menu: gabung, pilih, siap). */
+export interface PlayerPresses {
+  skill1: boolean;
+  skill2: boolean;
+  left: boolean;
+  right: boolean;
+}
+
+/** Ambang stik/arah untuk dianggap "ditekan" di menu. */
+const MENU_AXIS_THRESHOLD = 0.5;
+
 /**
  * Membaca keyboard + gamepad dan memetakannya ke status per pemain sesuai config/controls.ts.
  * Keyboard dilacak per KeyboardEvent.code sehingga beberapa pemain di satu keyboard tidak saling menimpa.
@@ -17,6 +28,8 @@ export interface PlayerInputState {
 export class InputManager {
   private readonly pressed = new Set<string>();
   private readonly states: PlayerInputState[];
+  private readonly prevStates: PlayerInputState[];
+  private readonly presses: PlayerPresses[];
   /** Override input (dipakai benchmark / bot nanti). null = pakai perangkat asli. */
   private readonly overrides: (PlayerInputState | null)[];
   private readonly systemHandlers = new Map<string, () => void>();
@@ -24,6 +37,8 @@ export class InputManager {
 
   constructor(private readonly bindings: PlayerBinding[] = PLAYER_BINDINGS) {
     this.states = bindings.map(() => emptyState());
+    this.prevStates = bindings.map(() => emptyState());
+    this.presses = bindings.map(() => ({ skill1: false, skill2: false, left: false, right: false }));
     this.overrides = bindings.map(() => null);
     this.playerKeys = new Set(
       bindings.flatMap((b) =>
@@ -54,15 +69,28 @@ export class InputManager {
     const pads = connectedGamepads();
     this.bindings.forEach((binding, i) => {
       const s = this.states[i];
+      const prev = this.prevStates[i];
+      Object.assign(prev, s);
       if (binding.kind === "keyboard") this.readKeyboard(binding, s);
       else this.readGamepad(binding, pads[binding.padOrder] ?? null, s);
       const o = this.overrides[i];
       if (o) Object.assign(s, o);
+
+      const p = this.presses[i];
+      p.skill1 = s.skill1 && !prev.skill1;
+      p.skill2 = s.skill2 && !prev.skill2;
+      p.left = s.moveX <= -MENU_AXIS_THRESHOLD && prev.moveX > -MENU_AXIS_THRESHOLD;
+      p.right = s.moveX >= MENU_AXIS_THRESHOLD && prev.moveX < MENU_AXIS_THRESHOLD;
     });
   }
 
   getState(player: number): Readonly<PlayerInputState> {
     return this.states[player];
+  }
+
+  /** Tombol yang baru ditekan pemain ini pada frame ini. */
+  getPresses(player: number): Readonly<PlayerPresses> {
+    return this.presses[player];
   }
 
   /** Semua kode tombol keyboard yang sedang ditekan (untuk layar debug). */

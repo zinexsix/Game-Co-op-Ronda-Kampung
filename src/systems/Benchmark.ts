@@ -20,8 +20,8 @@ const WARMUP_SEC = 3;
 const MEASURE_SEC = 15;
 
 /**
- * Benchmark otomatis: untuk tiap kualitas, 4 karakter digerakkan autopilot
- * (memutar di arena) dengan 30 musuh aktif, lalu FPS rata-rata & terendah dicatat.
+ * Benchmark otomatis: untuk tiap kualitas, 4 karakter digerakkan autopilot sambil memakai skill
+ * (memutar di arena) dengan musuh aktif selalu penuh, lalu FPS rata-rata & terendah dicatat.
  */
 export class Benchmark {
   running = false;
@@ -116,15 +116,15 @@ export class Benchmark {
     this.next();
   }
 
-  /** Autopilot: tiap pemain bergerak melingkar dengan fase berbeda (input analog penuh). */
+  /** Autopilot: tiap pemain bergerak melingkar dengan fase berbeda dan menahan kedua tombol skill. */
   private drive(time: number): void {
     for (let i = 0; i < this.input.playerCount; i++) {
       const a = time * 0.9 + (i * Math.PI) / 2;
       this.input.setOverride(i, {
         moveX: Math.cos(a),
         moveZ: Math.sin(a),
-        skill1: false,
-        skill2: false,
+        skill1: true,
+        skill2: true,
         connected: true,
       });
     }

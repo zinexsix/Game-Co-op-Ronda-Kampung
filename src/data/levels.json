@@ -1,5 +1,21 @@
 {
-  "_note": "Kerangka awal (Tahap 1). Detail gelombang diisi di Tahap 4-5.",
+  "_note": "Kerangka awal (Tahap 1). Detail gelombang level diisi di Tahap 4-5. testWave = gelombang percobaan berulang (Tahap 2).",
+  "testWave": {
+    "enemyType": "tikus",
+    "count": 14,
+    "spawnInterval": 0.7,
+    "breakSec": 6,
+    "firstDelaySec": 3,
+    "spawnJitter": 1.5,
+    "spawnPoints": [
+      [-17.5, 0],
+      [17.5, 0],
+      [0, 10.5],
+      [0, -10.5],
+      [-17.5, 9],
+      [17.5, -9]
+    ]
+  },
   "levels": [
     { "id": 1, "name": "Latihan", "area": "Halaman pos ronda", "durationSec": 60, "enemyTypes": ["tikus"], "waves": 2, "tutorial": true },
     { "id": 2, "name": "Ronda Biasa", "area": "Jalan kampung", "durationSec": 120, "enemyTypes": ["tikus", "hantu"], "waves": 4 },

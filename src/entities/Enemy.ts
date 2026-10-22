@@ -11,6 +11,12 @@ export class Enemy {
   readonly velocity = new Vector3();
   yaw = 0;
   hp = 0;
+  /** Hitung mundur ke serangan berikutnya (detik). */
+  attackTimer = 0;
+  /** Sisa waktu animasi "tersentak" setelah terkena serangan. */
+  hitTimer = 0;
+  /** Sisa waktu animasi menggigit. */
+  biteTimer = 0;
   /** Fase animasi goyang supaya kawanan tidak bergerak seragam. */
   bobPhase = 0;
   data: EnemyData | null = null;
@@ -25,6 +31,10 @@ export class Enemy {
     this.hp = data.hp;
     this.position.set(x, 0, z);
     this.velocity.setAll(0);
+    this.yaw = Math.atan2(-x, -z);
+    this.attackTimer = data.attackInterval;
+    this.hitTimer = 0;
+    this.biteTimer = 0;
     this.bobPhase = Math.random() * Math.PI * 2;
   }
 

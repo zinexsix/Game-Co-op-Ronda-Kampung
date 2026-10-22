@@ -1,0 +1,17 @@
+{
+  "_note": "Aturan umum permainan (Tahap 2): markas, koin, pemain, layar pilih peran.",
+  "markas": { "hp": 100 },
+  "coins": {
+    "maxOnGround": 40,
+    "pickupRadius": 0.5,
+    "lifetimeSec": 20,
+    "scatter": 0.6
+  },
+  "player": {
+    "hitInvulnSec": 0.4
+  },
+  "roleSelect": {
+    "minPlayers": 2,
+    "startCountdownSec": 3
+  }
+}

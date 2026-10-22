@@ -4,6 +4,8 @@
     {
       "id": "penjaga",
       "name": "Penjaga",
+      "icon": "🛡️",
+      "description": "Tameng tim: menahan serangan dan memancing musuh menjauh dari pos.",
       "hp": 150,
       "speedClass": "lambat",
       "damage": "rendah",
@@ -16,6 +18,8 @@
     {
       "id": "pembangun",
       "name": "Pembangun",
+      "icon": "🔨",
+      "description": "Tukang kampung: pakai koin untuk memasang barikade dan jebakan.",
       "hp": 80,
       "speedClass": "sedang",
       "damage": "sedang",
@@ -28,18 +32,30 @@
     {
       "id": "penyerang",
       "name": "Penyerang",
+      "icon": "⚔️",
+      "description": "Gesit dan bertenaga: menembak beruntun dan menyapu kerumunan musuh.",
       "hp": 80,
       "speedClass": "cepat",
       "damage": "tinggi",
       "color": "#ef4444",
       "skills": [
-        { "id": "serangan_cepat", "name": "Serangan Cepat", "note": "tembakan beruntun searah hadap" },
-        { "id": "serangan_area", "name": "Serangan Area", "radius": 4, "cooldown": 15 }
+        {
+          "id": "serangan_cepat",
+          "name": "Serangan Cepat",
+          "note": "tembakan beruntun searah hadap selama tombol ditahan",
+          "fireInterval": 0.16,
+          "damage": 7,
+          "projectileSpeed": 20,
+          "range": 13
+        },
+        { "id": "serangan_area", "name": "Serangan Area", "radius": 4, "cooldown": 15, "damage": 40 }
       ]
     },
     {
       "id": "penyembuh",
       "name": "Penyembuh",
+      "icon": "💚",
+      "description": "Penjaga semangat: memulihkan pos ronda dan teman, serta mempercepat tim.",
       "hp": 70,
       "speedClass": "sedang",
       "damage": "sangat_rendah",
