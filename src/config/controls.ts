@@ -75,4 +75,9 @@ export const SYSTEM_KEYS = {
   toggleQuality: "F2",
   runBenchmark: "F3",
   toggleFullscreen: "F4",
+  /** Mode uji skill (gelombang berhenti + koin). F7-F9 hanya aktif di mode ini. */
+  toggleTestMode: "F6",
+  testSpawn: "F7",
+  testCoins: "F8",
+  testDown: "F9",
 } as const;

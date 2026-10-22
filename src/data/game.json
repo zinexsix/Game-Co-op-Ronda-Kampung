@@ -1,5 +1,5 @@
 {
-  "_note": "Aturan umum permainan (Tahap 2): markas, koin, pemain, layar pilih peran.",
+  "_note": "Aturan umum permainan: markas, koin, pemain, revive, layar pilih peran, mode uji.",
   "markas": { "hp": 100 },
   "coins": {
     "maxOnGround": 40,
@@ -10,8 +10,19 @@
   "player": {
     "hitInvulnSec": 0.4
   },
+  "revive": {
+    "radius": 1.8,
+    "durationSec": 5,
+    "hpFraction": 0.5,
+    "decayPerSec": 0.5
+  },
   "roleSelect": {
     "minPlayers": 2,
     "startCountdownSec": 3
+  },
+  "testMode": {
+    "startCoins": 100,
+    "addCoins": 50,
+    "spawnGroup": 6
   }
 }

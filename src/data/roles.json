@@ -11,7 +11,7 @@
       "damage": "rendah",
       "color": "#3b82f6",
       "skills": [
-        { "id": "perisai", "name": "Perisai", "duration": 3, "cooldown": 8, "note": "blokir serangan satu arah" },
+        { "id": "perisai", "name": "Perisai", "duration": 3, "cooldown": 8, "arcDeg": 150, "note": "blokir serangan dari arah hadap" },
         { "id": "pancing", "name": "Pancing", "radius": 6, "duration": 4, "cooldown": 12, "note": "musuh dalam radius fokus ke Penjaga" }
       ]
     },
@@ -25,8 +25,8 @@
       "damage": "sedang",
       "color": "#f59e0b",
       "skills": [
-        { "id": "barikade", "name": "Barikade", "coinCost": 10, "note": "blokir jalur" },
-        { "id": "jebakan", "name": "Jebakan", "coinCost": 15, "duration": 3, "note": "musuh stun" }
+        { "id": "barikade", "name": "Barikade", "coinCost": 10, "hp": 60, "width": 2.6, "depth": 0.5, "placeDistance": 1.6, "maxActive": 6, "note": "blokir jalur; musuh memutar atau menggigitnya" },
+        { "id": "jebakan", "name": "Jebakan", "coinCost": 15, "duration": 3, "triggerRadius": 0.8, "radius": 2.2, "charges": 3, "rearmSec": 1, "placeDistance": 1.2, "maxActive": 4, "note": "musuh yang menginjak + sekitarnya terkena stun" }
       ]
     },
     {
@@ -61,8 +61,8 @@
       "damage": "sangat_rendah",
       "color": "#22c55e",
       "skills": [
-        { "id": "heal", "name": "Heal", "radius": 5, "note": "pulihkan HP markas atau teman" },
-        { "id": "buff", "name": "Buff", "speedBonus": 0.3, "duration": 5, "note": "kecepatan tim" }
+        { "id": "heal", "name": "Heal", "radius": 5, "healPlayer": 30, "healMarkas": 12, "cooldown": 6, "note": "pulihkan HP markas atau teman terdekat" },
+        { "id": "buff", "name": "Buff", "speedBonus": 0.3, "duration": 5, "cooldown": 14, "note": "kecepatan seluruh tim" }
       ]
     }
   ]

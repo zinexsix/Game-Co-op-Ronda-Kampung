@@ -84,3 +84,66 @@ export function separateCircles(bodies: readonly CircleBody[]): void {
     }
   }
 }
+
+/** Kotak miring di bidang X-Z (mis. barikade). cos/sin = rotasi sumbu lebar (halfX) dari sumbu X. */
+export interface OrientedBox {
+  cx: number;
+  cz: number;
+  halfX: number;
+  halfZ: number;
+  cos: number;
+  sin: number;
+}
+
+/** Koordinat lokal titik terhadap kotak miring (u = sepanjang lebar, v = sepanjang tebal). */
+export function toObbLocal(x: number, z: number, box: OrientedBox): { u: number; v: number } {
+  const dx = x - box.cx;
+  const dz = z - box.cz;
+  return { u: dx * box.cos + dz * box.sin, v: -dx * box.sin + dz * box.cos };
+}
+
+/** Titik terdekat pada kotak miring dari (x, z), dalam koordinat dunia. */
+export function nearestOnObb(x: number, z: number, box: OrientedBox): { x: number; z: number } {
+  const { u, v } = toObbLocal(x, z, box);
+  const cu = Math.max(-box.halfX, Math.min(box.halfX, u));
+  const cv = Math.max(-box.halfZ, Math.min(box.halfZ, v));
+  return { x: box.cx + cu * box.cos - cv * box.sin, z: box.cz + cu * box.sin + cv * box.cos };
+}
+
+/** Jarak titik ke tepi kotak miring (0 jika di dalam). */
+export function distanceToObb(x: number, z: number, box: OrientedBox): number {
+  const n = nearestOnObb(x, z, box);
+  return Math.hypot(x - n.x, z - n.z);
+}
+
+/** Dorong lingkaran keluar dari kotak miring. */
+export function pushOutOfObb(b: CircleBody, box: OrientedBox): void {
+  const p = b.position;
+  const { u, v } = toObbLocal(p.x, p.z, box);
+  const cu = Math.max(-box.halfX, Math.min(box.halfX, u));
+  const cv = Math.max(-box.halfZ, Math.min(box.halfZ, v));
+  const du = u - cu;
+  const dv = v - cv;
+  const d2 = du * du + dv * dv;
+  if (d2 >= b.radius * b.radius) return;
+  let nu: number;
+  let nv: number;
+  if (d2 > 1e-8) {
+    const d = Math.sqrt(d2);
+    nu = cu + (du / d) * b.radius;
+    nv = cv + (dv / d) * b.radius;
+  } else {
+    // Pusat di dalam kotak: keluarkan lewat sisi terdekat.
+    const penU = box.halfX - Math.abs(u) + b.radius;
+    const penV = box.halfZ - Math.abs(v) + b.radius;
+    if (penU < penV) {
+      nu = u + Math.sign(u || 1) * penU;
+      nv = v;
+    } else {
+      nu = u;
+      nv = v + Math.sign(v || 1) * penV;
+    }
+  }
+  p.x = box.cx + nu * box.cos - nv * box.sin;
+  p.z = box.cz + nu * box.sin + nv * box.cos;
+}

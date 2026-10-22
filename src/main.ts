@@ -1,4 +1,4 @@
-import { Engine, SceneInstrumentation } from "@babylonjs/core";
+import { Engine, Matrix, SceneInstrumentation, Vector3 } from "@babylonjs/core";
 import "./style.css";
 import { SYSTEM_KEYS } from "./config/controls";
 import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualityLevel } from "./config/quality";
@@ -10,7 +10,7 @@ import { Benchmark, type BenchResult } from "./systems/Benchmark";
 import { InputManager } from "./systems/InputManager";
 import { QualityManager } from "./systems/QualityManager";
 import { DebugOverlay, countRenderedTriangles, readDrawCalls, renderSize } from "./ui/DebugOverlay";
-import { Hud } from "./ui/Hud";
+import { Hud, type Projector } from "./ui/Hud";
 import { LoseScreen } from "./ui/LoseScreen";
 import { SettingsBar, toggleFullscreen } from "./ui/SettingsBar";
 
@@ -39,11 +39,29 @@ const match = new MatchScene(scene, arena, input);
 
 // --- Kualitas & UI ---
 const quality = new QualityManager(engine, arena.sun, arena.shadows, initialQuality);
-quality.addDynamicCasters([...match.players.flatMap((p) => p.meshes.slice(0, 3)), match.enemies.renderMesh]);
+quality.addDynamicCasters([
+  ...match.players.flatMap((p) => p.meshes.slice(0, 3)),
+  match.enemies.renderMesh,
+  ...match.structures.shadowMeshes,
+]);
 
 const settings = new SettingsBar(uiRoot, (l) => quality.apply(l), toggleFullscreen);
 settings.setActive(quality.level);
 quality.onChange((l) => settings.setActive(l));
+
+// Proyeksi titik dunia ke piksel layar (untuk bar revive di atas karakter).
+const tmpWorld = new Vector3();
+const project: Projector = (x, y, z) => {
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  const out = Vector3.Project(
+    tmpWorld.set(x, y, z),
+    Matrix.IdentityReadOnly,
+    scene.getTransformMatrix(),
+    arena.camera.viewport.toGlobal(w, h),
+  );
+  return out.z < 0 || out.z > 1 ? null : { x: out.x, y: out.y };
+};
 
 const hud = new Hud(uiRoot);
 const roleSelect = new RoleSelectScene(uiRoot, input, (assignments) => startMatch(assignments));
@@ -52,7 +70,7 @@ const lose = new LoseScreen(
   input,
   () => {
     match.restart();
-    hud.show(match);
+    hud.show(match, project);
   },
   () => openRoleSelect(match.currentAssignments),
 );
@@ -69,7 +87,7 @@ function startMatch(assignments: Assignment[]): void {
   roleSelect.hide();
   lose.hide();
   match.start(assignments);
-  hud.show(match);
+  hud.show(match, project);
   appState = "pertandingan";
 }
 
@@ -107,6 +125,21 @@ input.onSystemKey(SYSTEM_KEYS.toggleQuality, () => quality.toggle());
 input.onSystemKey(SYSTEM_KEYS.toggleFullscreen, toggleFullscreen);
 input.onSystemKey(SYSTEM_KEYS.runBenchmark, () => startBenchmark());
 
+// Mode uji skill: hanya saat pertandingan berjalan (bukan benchmark).
+const inMatch = () => appState === "pertandingan" && !benchmark.running && match.state === "main";
+input.onSystemKey(SYSTEM_KEYS.toggleTestMode, () => {
+  if (inMatch()) match.setTestMode(!match.testMode);
+});
+input.onSystemKey(SYSTEM_KEYS.testSpawn, () => {
+  if (inMatch() && match.testMode) match.testSpawnGroup();
+});
+input.onSystemKey(SYSTEM_KEYS.testCoins, () => {
+  if (inMatch() && match.testMode) match.testAddCoins();
+});
+input.onSystemKey(SYSTEM_KEYS.testDown, () => {
+  if (inMatch() && match.testMode) match.testDownNext();
+});
+
 const instr = new SceneInstrumentation(scene);
 instr.captureFrameTime = false;
 
@@ -126,7 +159,7 @@ scene.onBeforeRenderObservable.add(() => {
     return;
   }
   match.update(dt);
-  hud.update(match);
+  hud.update(match, dt, project);
   if (match.state === "kalah" && !lose.shown) {
     lose.show(
       { waves: match.waves.wave, kills: match.kills, coins: match.coinCount, seconds: match.elapsed },
@@ -194,8 +227,10 @@ if (import.meta.env.DEV) {
 const quickRoles = (params.get("roles") ?? "")
   .split(",")
   .filter((id): id is RoleId => ROLES.some((r) => r.id === id));
-if (quickRoles.length > 0) startMatch(quickRoles.map((roleId, slot) => ({ slot, roleId })));
-else openRoleSelect();
+if (quickRoles.length > 0) {
+  startMatch(quickRoles.map((roleId, slot) => ({ slot, roleId })));
+  if (params.has("uji")) match.setTestMode(true); // ?roles=...&uji langsung ke mode uji
+} else openRoleSelect();
 
 // ?bench atau ?bench=sedang,rendah (urutan kustom).
 if (params.has("bench")) {

@@ -116,15 +116,18 @@ export class Benchmark {
     this.next();
   }
 
-  /** Autopilot: tiap pemain bergerak melingkar dengan fase berbeda dan menahan kedua tombol skill. */
+  /**
+   * Autopilot: tiap pemain bergerak melingkar dengan fase berbeda; skill 1 sering ditahan,
+   * skill 2 ditekan-lepas berkala, sehingga semua skill (termasuk barikade/jebakan) ikut terpakai.
+   */
   private drive(time: number): void {
     for (let i = 0; i < this.input.playerCount; i++) {
       const a = time * 0.9 + (i * Math.PI) / 2;
       this.input.setOverride(i, {
         moveX: Math.cos(a),
         moveZ: Math.sin(a),
-        skill1: true,
-        skill2: true,
+        skill1: Math.sin(time * 3 + i) > -0.3,
+        skill2: Math.sin(time * 1.7 + i * 2) > 0.5,
         connected: true,
       });
     }

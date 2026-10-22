@@ -1,7 +1,7 @@
-import type { RoleData, SkillData } from "../data/types";
+import type { RoleData } from "../data/types";
 import type { Player } from "../entities/Player";
-import type { PlayerInputState } from "../systems/InputManager";
-import { skillStatus, type CombatContext, type RoleAbility, type SkillStatus } from "./RoleAbility";
+import type { PlayerInputState, PlayerPresses } from "../systems/InputManager";
+import { need, skillStatus, tickCooldowns, type CombatContext, type RoleAbility, type SkillStatus } from "./RoleAbility";
 
 const MUZZLE_OFFSET = 0.3; // proyektil keluar sedikit di depan tubuh
 
@@ -12,35 +12,36 @@ const MUZZLE_OFFSET = 0.3; // proyektil keluar sedikit di depan tubuh
  */
 export class PenyerangAbility implements RoleAbility {
   readonly skills: [SkillStatus, SkillStatus];
-  private readonly rapid: Required<Pick<SkillData, "fireInterval" | "damage" | "projectileSpeed" | "range">>;
-  private readonly area: Required<Pick<SkillData, "radius" | "cooldown" | "damage">>;
+  private readonly fireInterval: number;
+  private readonly rapidDamage: number;
+  private readonly projectileSpeed: number;
+  private readonly range: number;
+  private readonly areaRadius: number;
+  private readonly areaCooldown: number;
+  private readonly areaDamage: number;
   private fireTimer = 0;
 
   constructor(role: RoleData) {
     const [s1, s2] = role.skills;
-    this.rapid = {
-      fireInterval: need(s1.fireInterval, "fireInterval"),
-      damage: need(s1.damage, "damage"),
-      projectileSpeed: need(s1.projectileSpeed, "projectileSpeed"),
-      range: need(s1.range, "range"),
-    };
-    this.area = {
-      radius: need(s2.radius, "radius"),
-      cooldown: need(s2.cooldown, "cooldown"),
-      damage: need(s2.damage, "damage"),
-    };
-    this.skills = [skillStatus(s1, true), skillStatus(s2, true)];
+    this.fireInterval = need(s1.fireInterval, "serangan_cepat.fireInterval");
+    this.rapidDamage = need(s1.damage, "serangan_cepat.damage");
+    this.projectileSpeed = need(s1.projectileSpeed, "serangan_cepat.projectileSpeed");
+    this.range = need(s1.range, "serangan_cepat.range");
+    this.areaRadius = need(s2.radius, "serangan_area.radius");
+    this.areaCooldown = need(s2.cooldown, "serangan_area.cooldown");
+    this.areaDamage = need(s2.damage, "serangan_area.damage");
+    this.skills = [skillStatus(s1), skillStatus(s2)];
   }
 
   /** Jumlah proyektil maksimal yang bisa melayang bersamaan (untuk ukuran pool). */
   get maxProjectilesInFlight(): number {
-    const flightSec = this.rapid.range / this.rapid.projectileSpeed;
-    return Math.ceil(flightSec / this.rapid.fireInterval) + 1;
+    const flightSec = this.range / this.projectileSpeed;
+    return Math.ceil(flightSec / this.fireInterval) + 1;
   }
 
-  update(dt: number, player: Player, input: PlayerInputState, ctx: CombatContext): void {
+  update(dt: number, player: Player, input: PlayerInputState, presses: PlayerPresses, ctx: CombatContext): void {
     const [rapid, area] = this.skills;
-    area.cooldownLeft = Math.max(0, area.cooldownLeft - dt);
+    tickCooldowns(this.skills, dt);
     this.fireTimer = Math.max(0, this.fireTimer - dt);
     rapid.active = false;
     if (player.downed) return;
@@ -49,7 +50,7 @@ export class PenyerangAbility implements RoleAbility {
     if (input.skill1) {
       rapid.active = true;
       if (this.fireTimer <= 0) {
-        this.fireTimer = this.rapid.fireInterval;
+        this.fireTimer = this.fireInterval;
         const fx = player.facingX;
         const fz = player.facingZ;
         const offset = player.radius + MUZZLE_OFFSET;
@@ -58,19 +59,19 @@ export class PenyerangAbility implements RoleAbility {
           player.position.z + fz * offset,
           fx,
           fz,
-          this.rapid.projectileSpeed,
-          this.rapid.range,
-          this.rapid.damage,
+          this.projectileSpeed,
+          this.range,
+          this.rapidDamage,
         );
       }
     }
 
-    // Serangan area: langsung aktif saat tombol ditekan dan cooldown habis.
-    if (input.skill2 && area.cooldownLeft <= 0) {
-      area.cooldownLeft = this.area.cooldown;
+    // Serangan area saat tombol ditekan dan cooldown habis.
+    if (presses.skill2 && area.cooldownLeft <= 0) {
+      area.cooldownLeft = this.areaCooldown;
       const { x, z } = player.position;
-      ctx.effects.areaBlast(x, z, this.area.radius);
-      ctx.enemies.damageInRadius(x, z, this.area.radius, this.area.damage);
+      ctx.effects.areaBlast(x, z, this.areaRadius);
+      ctx.enemies.damageInRadius(x, z, this.areaRadius, this.areaDamage);
     }
   }
 
@@ -81,9 +82,8 @@ export class PenyerangAbility implements RoleAbility {
       s.active = false;
     }
   }
-}
 
-function need(value: number | undefined, field: string): number {
-  if (value === undefined) throw new Error(`roles.json: penyerang butuh nilai "${field}"`);
-  return value;
+  clearCooldowns(): void {
+    for (const s of this.skills) s.cooldownLeft = 0;
+  }
 }

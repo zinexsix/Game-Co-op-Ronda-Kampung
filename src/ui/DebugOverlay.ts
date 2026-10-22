@@ -73,7 +73,7 @@ export class DebugOverlay {
       <table>${rows}</table>
       <div class="keys">Tombol ditekan: ${input.pressedKeys.join(" ") || "-"}</div>
       <div class="keys">Gamepad: ${pads.length ? pads.join(" | ") : "belum terdeteksi (tekan tombol apa saja di gamepad)"}</div>
-      <div class="hint">F1 debug · F2 kualitas · F3 benchmark · F4 layar penuh</div>`;
+      <div class="hint">F1 debug · F2 kualitas · F3 benchmark · F4 layar penuh · F6 mode uji skill (F7 tikus · F8 koin · F9 jatuhkan)</div>`;
   }
 }
 

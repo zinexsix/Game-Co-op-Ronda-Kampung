@@ -57,7 +57,7 @@ body {
 
 .debug-overlay {
   position: absolute;
-  top: 12px;
+  top: 130px; /* di bawah bar pos ronda */
   left: 12px;
   background: rgba(0, 0, 0, 0.75);
   padding: 10px 14px;
@@ -387,7 +387,7 @@ kbd {
 }
 
 .player-card {
-  width: 230px;
+  width: 250px;
   padding: 8px 10px;
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.85);
@@ -490,7 +490,7 @@ kbd {
   background: #713f12;
 }
 
-.skill:not(.cooling):not(.pending) {
+.skill:not(.cooling):not(.poor) {
   border-color: #fde047;
 }
 
@@ -500,13 +500,100 @@ kbd {
   color: #fff;
 }
 
-.skill.pending {
-  opacity: 0.45;
+/* Skill berbayar koin saat koin bersama kurang. */
+.skill.poor {
+  border-color: #7f1d1d;
 }
 
-.skill.pending .skill-time {
-  font-size: 11px;
-  color: #cbd5e1;
+.skill.poor .skill-time {
+  color: #f87171;
+}
+
+/* Baris 1: tombol + cooldown/biaya; baris 2: nama skill. */
+.skill {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.skill-name {
+  order: 3;
+  flex-basis: 100%;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.skill-time {
+  white-space: nowrap;
+}
+
+.player-card {
+  position: relative;
+}
+
+/* Pesan singkat di atas kartu pemain (koin kurang, bangkit lagi, ...). */
+.card-notice {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: #fef08a;
+  color: #111;
+  font-weight: 800;
+  font-size: 16px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  box-shadow: 0 2px 0 #a16207;
+}
+
+.test-badge {
+  background: #7c3aed;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 8px;
+}
+
+/* Bar revive yang melayang di atas pemain jatuh (diposisikan lewat transform tiap frame). */
+.float-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.revive-float {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  will-change: transform;
+}
+
+.revive-text {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--slot);
+  text-shadow: 0 1px 2px #000, 0 0 4px #000;
+  white-space: nowrap;
+}
+
+.revive-bar {
+  width: 90px;
+  height: 12px;
+  border: 2px solid #f8fafc;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+
+.revive-fill {
+  height: 100%;
+  width: 0;
+  background: #4ade80;
 }
 
 /* ---------- Layar Kalah ---------- */

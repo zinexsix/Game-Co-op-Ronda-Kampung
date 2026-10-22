@@ -20,6 +20,20 @@ export interface SkillData {
   fireInterval?: number;
   projectileSpeed?: number;
   range?: number;
+  /** Perisai: lebar sudut blokir di depan (derajat). */
+  arcDeg?: number;
+  /** Barikade / jebakan. */
+  hp?: number;
+  width?: number;
+  depth?: number;
+  placeDistance?: number;
+  maxActive?: number;
+  triggerRadius?: number;
+  charges?: number;
+  rearmSec?: number;
+  /** Heal. */
+  healPlayer?: number;
+  healMarkas?: number;
   note?: string;
 }
 
@@ -52,6 +66,10 @@ export interface EnemyData {
   /** Jarak serang dari tepi tubuh ke sasaran. */
   attackRange: number;
   coinDrop: number;
+  /** Damage ke barikade per gigitan. */
+  barricadeDamage: number;
+  /** 0-1: jika posisi musuh sejauh ini dari tengah barikade (relatif setengah lebar), ia memutar; selain itu menggigit. */
+  barricadeBypass: number;
   phases?: number;
 }
 
@@ -80,6 +98,8 @@ export interface GameRules {
   markas: { hp: number };
   coins: { maxOnGround: number; pickupRadius: number; lifetimeSec: number; scatter: number };
   player: { hitInvulnSec: number };
+  revive: { radius: number; durationSec: number; hpFraction: number; decayPerSec: number };
+  testMode: { startCoins: number; addCoins: number; spawnGroup: number };
   roleSelect: { minPlayers: number; startCountdownSec: number };
 }
 

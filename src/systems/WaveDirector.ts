@@ -20,6 +20,8 @@ export class WaveDirector {
   constructor(
     private readonly data: WaveData,
     private readonly enemies: EnemyManager,
+    /** Dipanggil saat gelombang baru mulai (pemain jatuh kembali di sini). */
+    private readonly onWaveStart: (wave: number) => void,
   ) {
     this.reset();
   }
@@ -47,6 +49,7 @@ export class WaveDirector {
           this.phase = "muncul";
           this.spawned = 0;
           this.spawnTimer = 0;
+          this.onWaveStart(this.wave);
         }
         break;
       case "muncul":

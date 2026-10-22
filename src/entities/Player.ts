@@ -15,6 +15,11 @@ const TURN_SPEED = 14; // rad/detik, kecepatan berputar menghadap arah gerak
 const HIT_FLASH_SEC = 0.18; // lama kilatan merah saat terkena serangan
 const HIT_FLASH_COLOR = new Color3(1, 0.25, 0.2);
 const DOWNED_RING_COLOR = new Color3(0.25, 0.25, 0.28);
+const BUFF_RING_COLOR = new Color3(0.3, 0.85, 1);
+const BUFF_PULSE_RATE = 10;
+
+/** Hasil serangan ke pemain. */
+export type DamageResult = "kena" | "diblokir" | "diabaikan";
 
 /**
  * Karakter pemain placeholder: kapsul berwarna + penanda hadap + aksesori siluet per peran.
@@ -37,6 +42,16 @@ export class Player {
   invulnerable = false;
   /** Arah hadap (radian, 0 = +Z). */
   yaw = 0;
+  /** Progres revive 0-1 saat jatuh (teman berdiri di dekat). */
+  reviveProgress = 0;
+  /** Sisa waktu perisai aktif (detik); blokir serangan dari depan. */
+  shieldTimer = 0;
+  /** cos(setengah sudut perisai): serangan dengan arah di dalam sudut ini diblokir. */
+  private shieldCos = 1;
+  /** Buff kecepatan dari Penyembuh. */
+  buffTimer = 0;
+  private buffBonus = 0;
+  private time = 0;
   /** Input terakhir yang diterima (dipakai layar debug). */
   lastInput: PlayerInputState = { moveX: 0, moveZ: 0, skill1: false, skill2: false, connected: true };
   private invulnTimer = 0;
@@ -120,6 +135,15 @@ export class Player {
     return this.root.position;
   }
 
+  get injured(): boolean {
+    return this.hp < this.maxHp;
+  }
+
+  /** Kecepatan gerak saat ini (termasuk buff). */
+  get currentSpeed(): number {
+    return this.speed * (1 + (this.buffTimer > 0 ? this.buffBonus : 0));
+  }
+
   get active(): boolean {
     return this.slot >= 0;
   }
@@ -151,28 +175,78 @@ export class Player {
     this.hp = this.maxHp;
     this.invulnTimer = 0;
     this.flashTimer = 0;
+    this.shieldTimer = 0;
+    this.buffTimer = 0;
+    this.reviveProgress = 0;
     // Hadap ke pos ronda di tengah arena.
     this.yaw = Math.atan2(-spawn.x, -spawn.z);
     this.root.rotation.y = this.yaw;
     this.setDowned(false);
   }
 
-  /** Terima damage. Mengembalikan true jika damage benar-benar diterapkan. */
-  takeDamage(amount: number): boolean {
-    if (this.downed || this.invulnTimer > 0) return false;
+  /**
+   * Terima damage dari penyerang di (fromX, fromZ). Perisai aktif memblokir serangan
+   * yang datang dari arah hadap (di dalam sudut perisai).
+   */
+  takeDamage(amount: number, fromX: number, fromZ: number): DamageResult {
+    if (this.downed || this.invulnTimer > 0) return "diabaikan";
+    if (this.shieldTimer > 0) {
+      const dx = fromX - this.position.x;
+      const dz = fromZ - this.position.z;
+      const len = Math.hypot(dx, dz) || 1;
+      if ((dx * this.facingX + dz * this.facingZ) / len >= this.shieldCos) return "diblokir";
+    }
     this.invulnTimer = GAME_RULES.player.hitInvulnSec;
     this.flashTimer = HIT_FLASH_SEC;
-    if (this.invulnerable) return true;
+    if (this.invulnerable) return "kena";
     this.hp = Math.max(0, this.hp - amount);
     if (this.hp <= 0) this.setDowned(true);
-    return true;
+    return "kena";
+  }
+
+  /** Pasang perisai selama `duration` detik dengan lebar sudut `arcDeg`. */
+  raiseShield(duration: number, arcDeg: number): void {
+    this.shieldTimer = duration;
+    this.shieldCos = Math.cos(((arcDeg / 2) * Math.PI) / 180);
+  }
+
+  /** Pulihkan HP; mengembalikan jumlah yang benar-benar dipulihkan. */
+  heal(amount: number): number {
+    if (this.downed) return 0;
+    const before = this.hp;
+    this.hp = Math.min(this.maxHp, this.hp + amount);
+    return this.hp - before;
+  }
+
+  applySpeedBuff(bonus: number, duration: number): void {
+    this.buffBonus = bonus;
+    this.buffTimer = duration;
+  }
+
+  /** Langsung jatuh (mode uji revive). */
+  knockDown(): void {
+    if (this.downed) return;
+    this.hp = 0;
+    this.setDowned(true);
+  }
+
+  /** Bangkit dari status jatuh dengan sebagian HP. */
+  revive(hpFraction: number): void {
+    this.hp = Math.max(1, Math.round(this.maxHp * hpFraction));
+    this.reviveProgress = 0;
+    this.invulnTimer = GAME_RULES.player.hitInvulnSec;
+    this.setDowned(false);
   }
 
   /** Gerak di bidang X-Z berdasarkan input. Tabrakan diselesaikan terpisah oleh Collision. */
   update(dt: number, input: PlayerInputState): void {
     this.lastInput = input;
+    this.time += dt;
     this.invulnTimer = Math.max(0, this.invulnTimer - dt);
+    this.shieldTimer = Math.max(0, this.shieldTimer - dt);
+    this.buffTimer = Math.max(0, this.buffTimer - dt);
     this.updateFlash(dt);
+    this.updateRing();
     if (this.downed) return;
 
     const len = Math.hypot(input.moveX, input.moveZ);
@@ -180,8 +254,9 @@ export class Player {
       const k = Math.min(1, len); // input analog: gerak pelan jika stik sedikit
       const nx = input.moveX / len;
       const nz = input.moveZ / len;
-      this.root.position.x += nx * this.speed * k * dt;
-      this.root.position.z += nz * this.speed * k * dt;
+      const speed = this.currentSpeed;
+      this.root.position.x += nx * speed * k * dt;
+      this.root.position.z += nz * speed * k * dt;
       const targetYaw = Math.atan2(nx, nz);
       const diff = Scalar.NormalizeRadians(targetYaw - this.yaw);
       this.yaw += Math.sign(diff) * Math.min(Math.abs(diff), TURN_SPEED * dt);
@@ -196,10 +271,24 @@ export class Player {
 
   private setDowned(downed: boolean): void {
     this.downed = downed;
+    if (downed) {
+      this.shieldTimer = 0;
+      this.buffTimer = 0;
+    }
     // Rebah ke depan; diangkat setinggi jari-jari supaya tidak tenggelam ke lantai.
     this.body.rotation.x = downed ? Math.PI / 2 : 0;
     this.body.position.y = downed ? this.bodyLift : 0;
-    this.ringMat.emissiveColor.copyFrom(downed ? DOWNED_RING_COLOR : this.ringColor);
+    this.updateRing();
+  }
+
+  /** Warna alas: abu-abu saat jatuh, berdenyut biru muda saat kena buff. */
+  private updateRing(): void {
+    const c = this.ringMat.emissiveColor;
+    if (this.downed) c.copyFrom(DOWNED_RING_COLOR);
+    else if (this.buffTimer > 0) {
+      const t = 0.5 + 0.5 * Math.sin(this.time * BUFF_PULSE_RATE);
+      Color3.LerpToRef(this.ringColor, BUFF_RING_COLOR, 0.5 + 0.5 * t, c);
+    } else c.copyFrom(this.ringColor);
   }
 
   private updateFlash(dt: number): void {

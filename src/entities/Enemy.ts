@@ -1,5 +1,6 @@
 import { Vector3 } from "@babylonjs/core";
 import type { EnemyData } from "../data/types";
+import type { Player } from "./Player";
 
 /**
  * Data satu musuh. Tidak punya mesh sendiri: semua musuh sejenis digambar
@@ -17,6 +18,11 @@ export class Enemy {
   hitTimer = 0;
   /** Sisa waktu animasi menggigit. */
   biteTimer = 0;
+  /** Sisa waktu stun (jebakan): tidak bergerak & tidak menyerang. */
+  stunTimer = 0;
+  /** Pancing Penjaga: selama lureTimer > 0 musuh mengejar pemain ini, bukan markas. */
+  lureTarget: Player | null = null;
+  lureTimer = 0;
   /** Fase animasi goyang supaya kawanan tidak bergerak seragam. */
   bobPhase = 0;
   data: EnemyData | null = null;
@@ -35,10 +41,18 @@ export class Enemy {
     this.attackTimer = data.attackInterval;
     this.hitTimer = 0;
     this.biteTimer = 0;
+    this.stunTimer = 0;
+    this.lureTarget = null;
+    this.lureTimer = 0;
     this.bobPhase = Math.random() * Math.PI * 2;
+  }
+
+  get stunned(): boolean {
+    return this.stunTimer > 0;
   }
 
   despawn(): void {
     this.active = false;
+    this.lureTarget = null;
   }
 }

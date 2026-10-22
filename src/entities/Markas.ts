@@ -26,6 +26,12 @@ export class Markas {
     this.hp = Math.max(0, this.hp - amount);
   }
 
+  /** Pulihkan HP (Penyembuh). */
+  heal(amount: number): void {
+    if (this.destroyed) return;
+    this.hp = Math.min(this.maxHp, this.hp + amount);
+  }
+
   reset(): void {
     this.hp = this.maxHp;
     this.hitCount = 0;
