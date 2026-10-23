@@ -88,6 +88,13 @@ export class AudioSystem {
     this.applyVolumes();
   }
 
+  /** Jeda total (game dijeda): hentikan semua suara sementara. */
+  setPaused(paused: boolean): void {
+    if (!this.ctx) return;
+    if (paused && this.ctx.state === "running") void this.ctx.suspend();
+    if (!paused && this.ctx.state === "suspended") void this.ctx.resume();
+  }
+
   setMood(mood: MusicMood): void {
     this.mood = mood;
   }

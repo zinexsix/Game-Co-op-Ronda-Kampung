@@ -1,0 +1,64 @@
+{
+  "_note": "Pemetaan kontrol pemain. File ini bisa diubah LANGSUNG di folder dist/config/ tanpa build ulang (muat ulang halaman setelah menyimpan). Kode tombol = KeyboardEvent.code (posisi fisik): KeyA..KeyZ, Digit0..Digit9, ArrowUp/Down/Left/Right, Comma, Period, Slash, Semicolon, Quote, Enter, Space. Hindari Shift (5x memicu Sticky Keys Windows), Control (Ctrl+W menutup tab), Alt, Tab, F5, F11, F12. Ganti activeProfile untuk memakai profil lain.",
+  "activeProfile": "standar",
+  "profiles": {
+    "standar": [
+      {
+        "kind": "keyboard",
+        "label": "WASD + Q/E",
+        "skill1Label": "Q", "skill2Label": "E", "leftRightLabel": "A / D",
+        "up": ["KeyW"], "down": ["KeyS"], "left": ["KeyA"], "right": ["KeyD"],
+        "skill1": ["KeyQ"], "skill2": ["KeyE"]
+      },
+      {
+        "kind": "keyboard",
+        "label": "Panah + , / .",
+        "skill1Label": ",", "skill2Label": ".", "leftRightLabel": "← / →",
+        "up": ["ArrowUp"], "down": ["ArrowDown"], "left": ["ArrowLeft"], "right": ["ArrowRight"],
+        "skill1": ["Comma"], "skill2": ["Period"]
+      },
+      {
+        "kind": "keyboard",
+        "label": "IJKL + U/O",
+        "skill1Label": "U", "skill2Label": "O", "leftRightLabel": "J / L",
+        "up": ["KeyI"], "down": ["KeyK"], "left": ["KeyJ"], "right": ["KeyL"],
+        "skill1": ["KeyU"], "skill2": ["KeyO"]
+      },
+      {
+        "kind": "gamepad",
+        "label": "Gamepad (stik kiri + A/B)",
+        "skill1Label": "A", "skill2Label": "B", "leftRightLabel": "stik ← / →",
+        "padOrder": 0, "axisX": 0, "axisY": 1, "skill1Button": 0, "skill2Button": 1, "deadZone": 0.2, "useDpad": true
+      }
+    ],
+    "alternatif": [
+      {
+        "kind": "keyboard",
+        "label": "WASD + Q/E",
+        "skill1Label": "Q", "skill2Label": "E", "leftRightLabel": "A / D",
+        "up": ["KeyW"], "down": ["KeyS"], "left": ["KeyA"], "right": ["KeyD"],
+        "skill1": ["KeyQ"], "skill2": ["KeyE"]
+      },
+      {
+        "kind": "keyboard",
+        "label": "Panah + Enter / '",
+        "skill1Label": "Enter", "skill2Label": "'", "leftRightLabel": "← / →",
+        "up": ["ArrowUp"], "down": ["ArrowDown"], "left": ["ArrowLeft"], "right": ["ArrowRight"],
+        "skill1": ["Enter"], "skill2": ["Quote"]
+      },
+      {
+        "kind": "keyboard",
+        "label": "TFGH + R/Y",
+        "skill1Label": "R", "skill2Label": "Y", "leftRightLabel": "F / H",
+        "up": ["KeyT"], "down": ["KeyG"], "left": ["KeyF"], "right": ["KeyH"],
+        "skill1": ["KeyR"], "skill2": ["KeyY"]
+      },
+      {
+        "kind": "gamepad",
+        "label": "Gamepad (stik kiri + A/B)",
+        "skill1Label": "A", "skill2Label": "B", "leftRightLabel": "stik ← / →",
+        "padOrder": 0, "axisX": 0, "axisY": 1, "skill1Button": 0, "skill2Button": 1, "deadZone": 0.2, "useDpad": true
+      }
+    ]
+  }
+}

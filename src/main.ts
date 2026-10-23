@@ -1,6 +1,5 @@
 import { Engine, Matrix, SceneInstrumentation, Vector3 } from "@babylonjs/core";
-import "./style.css";
-import { SYSTEM_KEYS } from "./config/controls";
+import { PLAYER_BINDINGS, SYSTEM_KEYS } from "./config/controls";
 import { DEFAULT_QUALITY, QUALITY_PRESETS, type QualityLevel } from "./config/quality";
 import { FLOW_RULES, GAME_RULES, LEVELS, ROLES, getRole, type RoleId } from "./data/types";
 import { createArenaScene } from "./scenes/ArenaScene";
@@ -14,6 +13,9 @@ import { QualityManager } from "./systems/QualityManager";
 import { DebugOverlay, countRenderedTriangles, readDrawCalls, renderSize } from "./ui/DebugOverlay";
 import { Hud, type Projector } from "./ui/Hud";
 import { ChoiceScreen } from "./ui/ChoiceScreen";
+import { showFatal } from "./ui/fatal";
+import { KeyTestScreen } from "./ui/KeyTestScreen";
+import { PauseScreen } from "./ui/PauseScreen";
 import { SettingsBar, toggleFullscreen } from "./ui/SettingsBar";
 
 const params = new URLSearchParams(location.search);
@@ -55,6 +57,15 @@ quality.addDynamicCasters([
   ...match.structures.shadowMeshes,
 ]);
 
+// Pemanasan shader: semua arena & objek dinamis digambar sekali saat dimuat (bayangan menyala dan mati),
+// agar tidak ada kompilasi shader di tengah permainan (penyebab patahan FPS saat level pertama kali tampil).
+for (const shadowsOn of [true, false]) {
+  arena.sun.shadowEnabled = shadowsOn;
+  match.warmUp(() => scene.render());
+}
+quality.apply(quality.level);
+arena.setLayout(LEVELS[0].arena.id);
+
 const settings = new SettingsBar(uiRoot, (l) => quality.apply(l), toggleFullscreen, () => {
   audio.unlock();
   audio.toggleMute();
@@ -79,7 +90,14 @@ const hud = new Hud(uiRoot);
 const roleSelect = new RoleSelectScene(uiRoot, input, (assignments) => startMatch(withBots(assignments)));
 const choice = new ChoiceScreen(uiRoot, input, FLOW_RULES.screenInputDelaySec);
 // Slot yang menekan tombol di menu langsung tergabung di pilih peran.
-const menu = new MenuScene(uiRoot, input, (slot) => openRoleSelect([{ slot, roleId: ROLES[0].id }]), audio);
+const keyTest = new KeyTestScreen(uiRoot, input);
+const menu = new MenuScene(uiRoot, input, (slot) => openRoleSelect([{ slot, roleId: ROLES[0].id }]), audio, {
+  fullscreen: toggleFullscreen,
+  keyTest: () => keyTest.toggle(),
+});
+const pause = new PauseScreen(uiRoot, () => {
+  if (pauseReason === "fokus") resumeGame();
+});
 
 const debug = new DebugOverlay(uiRoot);
 const status = document.createElement("div");
@@ -92,6 +110,101 @@ uiRoot.appendChild(idleWarning);
 
 type AppState = "menu" | "pilihPeran" | "pertandingan";
 let appState: AppState = "menu";
+
+// --- Jeda otomatis: tab/jendela kehilangan fokus, atau gamepad pemain dicabut ---
+type PauseReason = "fokus" | "gamepad";
+let pauseReason: PauseReason | null = null;
+let pausedSlot = -1;
+/** Tab sempat kehilangan fokus; jeda baru bisa dilanjutkan setelah fokus kembali. */
+let focusLost = false;
+
+function canPause(): boolean {
+  return appState === "pertandingan" && match.state === "main" && !choice.shown && !benchmark.running;
+}
+
+function pauseGame(reason: PauseReason, slot = -1): void {
+  if (pauseReason) return;
+  pauseReason = reason;
+  pausedSlot = slot;
+  audio.setPaused(true);
+  if (reason === "fokus") {
+    pause.show("JEDA", "Game dijeda karena jendela tidak aktif.<br>Klik layar atau tekan tombol skill apa saja untuk lanjut.");
+  } else {
+    const keys = PLAYER_BINDINGS.filter((b) => b.kind === "keyboard").map((b) => b.skill1Label).join(" / ");
+    pause.show(
+      `Gamepad P${slot + 1} terputus`,
+      `Sambungkan kembali gamepad: game lanjut otomatis.<br>Atau tekan <kbd>${keys}</kbd> untuk lanjut, P${slot + 1} dimainkan bot.`,
+    );
+  }
+}
+
+function resumeGame(): void {
+  if (!pauseReason) return;
+  pauseReason = null;
+  pausedSlot = -1;
+  pause.hide();
+  audio.setPaused(false);
+}
+
+window.addEventListener("blur", () => {
+  focusLost = true;
+  if (canPause()) pauseGame("fokus");
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    focusLost = true;
+    if (canPause()) pauseGame("fokus");
+  }
+});
+window.addEventListener("focus", () => (focusLost = false));
+
+/** Panggil tiap frame saat bertanding: cek gamepad pemain manusia & tombol lanjut. */
+function updatePause(): void {
+  if (!pauseReason) {
+    if (!canPause()) return;
+    for (const p of match.activePlayers) {
+      if (!p.isBot && PLAYER_BINDINGS[p.slot]?.kind === "gamepad" && !input.getState(p.slot).connected) {
+        pauseGame("gamepad", p.slot);
+        return;
+      }
+    }
+    return;
+  }
+  if (pauseReason === "gamepad" && input.getState(pausedSlot).connected) return resumeGame();
+  for (let i = 0; i < input.playerCount; i++) {
+    const press = input.getPresses(i);
+    if (!(press.skill1 || press.skill2)) continue;
+    if (pauseReason === "gamepad") {
+      match.convertToBot(pausedSlot);
+      hud.show(match, project); // kartu pemain itu kini bertanda BOT
+    } else if (focusLost) return; // fokus belum kembali
+    return resumeGame();
+  }
+}
+
+// --- Kursor disembunyikan saat bermain (muncul lagi sebentar jika mouse digerakkan) ---
+const CURSOR_HIDE_SEC = 2;
+let mouseIdle = 0;
+window.addEventListener("mousemove", () => (mouseIdle = 0));
+function updateCursor(dt: number): void {
+  mouseIdle += dt;
+  const hide = appState === "pertandingan" && !pause.shown && mouseIdle > CURSOR_HIDE_SEC;
+  document.body.classList.toggle("hide-cursor", hide);
+}
+
+// --- Grafis terputus (driver/GPU reset): coba pulih, jika tidak muat ulang halaman ---
+const CONTEXT_RELOAD_SEC = 5;
+let contextNotice: HTMLDivElement | null = null;
+let contextReloadTimer = 0;
+engine.onContextLostObservable.add(() => {
+  contextNotice = showFatal("Grafis terputus sebentar", ["Sedang memulihkan tampilan… Jika tidak pulih, halaman dimuat ulang otomatis."]);
+  contextReloadTimer = window.setTimeout(() => location.reload(), CONTEXT_RELOAD_SEC * 1000);
+});
+engine.onContextRestoredObservable.add(() => {
+  window.clearTimeout(contextReloadTimer);
+  contextNotice?.remove();
+  contextNotice = null;
+});
 /** Untuk tes: ?bot=0 mematikan bot pengisi peran kosong. */
 const fillWithBots = params.get("bot") !== "0";
 
@@ -132,6 +245,7 @@ function playLevel(index: number, retry = false): void {
 }
 
 function openRoleSelect(previous: readonly Assignment[] = []): void {
+  resumeGame();
   const keep = humansOf(previous);
   match.stop();
   hud.hide();
@@ -144,6 +258,7 @@ function openRoleSelect(previous: readonly Assignment[] = []): void {
 
 /** Kembali ke menu utama (arena Level 1 sebagai latar). */
 function openMenu(): void {
+  resumeGame();
   match.stop();
   hud.hide();
   choice.hide();
@@ -238,7 +353,7 @@ function showWin(next: number): void {
 /** Layar hasil akhir: skor tim, MVP, combo; kembali ke menu otomatis jika tidak ada input. */
 function showResult(): void {
   const rows = match.score.levels
-    .map((l, i) => `<tr><td>Level ${i + 1} · ${l.levelName}</td><td class="num">${l.total}</td></tr>`)
+    .map((l) => `<tr><td>Level ${l.levelId} · ${l.levelName}</td><td class="num">${l.total}</td></tr>`)
     .join("");
   const combos = match.score.levels.reduce((n, l) => n + l.combos, 0);
   const mvp = match.mvp;
@@ -316,6 +431,9 @@ function startBenchmark(order?: QualityLevel[]): void {
 input.onSystemKey(SYSTEM_KEYS.toggleDebug, () => debug.toggle());
 input.onSystemKey(SYSTEM_KEYS.toggleQuality, () => quality.toggle());
 input.onSystemKey(SYSTEM_KEYS.toggleFullscreen, toggleFullscreen);
+input.onSystemKey(SYSTEM_KEYS.keyTest, () => {
+  if (appState !== "pertandingan") keyTest.toggle();
+});
 input.onSystemKey(SYSTEM_KEYS.runBenchmark, () => startBenchmark());
 
 // Mode uji skill: hanya saat pertandingan berjalan (bukan benchmark).
@@ -349,6 +467,9 @@ scene.onBeforeRenderObservable.add(() => {
   audio.update();
   arena.updateShake(dt);
   updateIdle(dt);
+  updateCursor(dt);
+  keyTest.update();
+  if (keyTest.shown) return; // layar uji tombol: tombol pemain tidak menggerakkan menu
   // Bunyi klik singkat untuk pilihan di menu & pilih peran.
   if (appState !== "pertandingan" || choice.shown) {
     for (let i = 0; i < input.playerCount; i++) {
@@ -369,6 +490,8 @@ scene.onBeforeRenderObservable.add(() => {
     roleSelect.update(dt);
     return;
   }
+  updatePause();
+  if (pauseReason) return;
   match.update(dt);
   hud.update(match, dt, project);
   if (!choice.shown) {
@@ -459,9 +582,14 @@ console.log(
   JSON.stringify(match.enemies.modelTriangles),
 );
 
-// Akses dari konsol browser saat pengembangan (tidak ada di build pameran).
-if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>).__game = { match, input, engine, roleSelect, choice, arena, menu, audio, quality };
+// Akses dari konsol browser saat pengembangan, atau di build produksi dengan ?tes (uji otomatis).
+if (import.meta.env.DEV || params.has("tes")) {
+  (window as unknown as Record<string, unknown>).__game = {
+    match, input, engine, roleSelect, choice, arena, menu, audio, quality, keyTest,
+    get pauseReason() {
+      return pauseReason;
+    },
+  };
 }
 
 // Untuk tes: ?roles=penyerang,penjaga langsung main (slot P1, P2, ... sesuai urutan); ?level=2 mulai di Level 2.

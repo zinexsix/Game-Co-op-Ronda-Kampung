@@ -344,6 +344,7 @@ export class MatchScene {
     const level = this.level;
     this.arena.setLayout(level.arena.id);
     this.enemies.setSpawnPoints(Object.values(level.spawnPoints));
+    this.enemies.setDamageMult(level.enemyDamageMult ?? 1);
     // Kesulitan mengikuti jumlah pemain MANUSIA (bot tidak dihitung).
     this.levels.load(level, scalingFor(this.humanCount));
     this.contributions.saveCheckpoint();
@@ -396,6 +397,44 @@ export class MatchScene {
   testAddCoins(): void {
     this.coinCount += GAME_RULES.testMode.addCoins;
     for (const p of this._activePlayers) this.abilityOf(p).clearCooldowns();
+  }
+
+  /** Pemain manusia di slot ini diteruskan oleh bot (mis. gamepad dicabut dan tidak disambung lagi). */
+  convertToBot(slot: number): void {
+    const p = this._activePlayers.find((q) => q.slot === slot);
+    if (!p || p.isBot) return;
+    p.isBot = true;
+    this.bots.set(p.role.id, new BotBrain(p, GAME_RULES.bots));
+    const a = this.assignments.find((q) => q.slot === slot);
+    if (a) a.bot = true;
+    this.notices.push({ slot, text: "Dilanjutkan bot", kind: "info" });
+  }
+
+  /**
+   * Pemanasan shader saat game dimuat: di tiap arena, tampilkan sekali semua jenis objek dinamis
+   * (pemain, tiap jenis musuh + bintang stun, koin, proyektil, partikel, cincin efek, barikade, jebakan)
+   * lalu gambar satu frame lewat `render`. Shader jadi sudah terkompilasi sebelum pemain masuk level.
+   */
+  warmUp(render: () => void): void {
+    this.startRun(ROLES.map((r, slot) => ({ slot, roleId: r.id })), 0);
+    for (let i = 0; i < LEVELS.length; i++) {
+      if (LEVELS[i].playable === false) continue;
+      this.startLevel(i);
+      for (const e of ENEMIES) this.enemies.spawnAt(e.id, 0, -ARENA.halfDepth + 2);
+      this.enemies.stunWithin(0, 0, ARENA.halfWidth * 2, 1);
+      this.structures.placeBarricade(4, 4, 0, 1);
+      this.structures.placeTrap(-4, 4);
+      this.coins.drop(0, -3, 2);
+      this.projectiles.fire(0, -5, 0, 1, 1, 10, 1, 0.1);
+      this.effects.burst(0, 1, 0, 4, FX_HIT, 1, 1, 0.1);
+      this.effects.areaBlast(0, 0, 2);
+      this.playerOf("penjaga").raiseShield(1, 90);
+      this.playerOf("penyembuh").applySpeedBuff(0.1, 1);
+      this.playerOf("pembangun").knockDown();
+      this.update(1 / 60);
+      render();
+    }
+    this.stop();
   }
 
   /** Jatuhkan pemain bergiliran (uji revive). */
@@ -468,7 +507,7 @@ export class MatchScene {
       this.audio.play("kalah");
       this.audio.setMood("menu");
     } else if (this.levels.complete && !this.testMode && !this.benchmark) {
-      this.lastLevelScore = this.score.compute(this.level.name, this.markas.hp, this.combos.count, this.elapsed, this.level.parTimeSec);
+      this.lastLevelScore = this.score.compute(this.level.id, this.level.name, this.markas.hp, this.combos.count, this.elapsed, this.level.parTimeSec);
       this.score.commit(this.lastLevelScore);
       this.state = "menang";
       this.hints.stop();

@@ -31,6 +31,7 @@ Ubah angka, simpan, lalu muat ulang halaman. Dev server (`npm run dev`) memuat u
 | Pengali jumlah & HP musuh | `levels.json` → `playerScaling` | 1: 0,75/0,85 · 2: 1/1 · 3: 1,3/1,15 · 4: 1,6/1,3 | Kunci = jumlah pemain **manusia** (bot tidak dihitung) |
 | Musuh aktif maksimal | `enemies.json` → `maxActive` | 30 | Batas performa; gelombang menunggu jika penuh |
 | Jadwal gelombang | `levels.json` → `levels[].waves[]` | `at`, `count`, `interval` | `at` = detik sejak level mulai |
+| Damage musuh per level | `levels.json` → `levels[].enemyDamageMult` | Level 1: 0,5 · lainnya 1 | Level Latihan lebih memaafkan pengunjung baru |
 | Gelombang dimajukan | `levels.json` → `flow.earlyNextWaveSec` | 3 | Arena kosong selama ini → gelombang berikutnya langsung mulai |
 
 ### Musuh

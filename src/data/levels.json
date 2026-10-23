@@ -28,6 +28,7 @@
       "arena": { "id": "halaman", "halfWidth": 13, "halfDepth": 8 },
       "parTimeSec": 60,
       "tutorial": true,
+      "enemyDamageMult": 0.5,
       "spawnPoints": {
         "kiri": [-12.5, 0],
         "kanan": [12.5, 0],

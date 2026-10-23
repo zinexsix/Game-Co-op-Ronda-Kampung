@@ -2,6 +2,7 @@ import type { ScoreRules } from "../data/types";
 
 /** Rincian skor satu level. */
 export interface LevelScore {
+  levelId: number;
   levelName: string;
   markasHp: number;
   markasPoints: number;
@@ -33,12 +34,13 @@ export class ScoreSystem {
   }
 
   /** Hitung skor level (belum disimpan). */
-  compute(levelName: string, markasHp: number, combos: number, seconds: number, parTimeSec: number): LevelScore {
+  compute(levelId: number, levelName: string, markasHp: number, combos: number, seconds: number, parTimeSec: number): LevelScore {
     const hp = Math.max(0, Math.ceil(markasHp));
     const markasPoints = hp * this.rules.markasHpPoints;
     const comboPoints = combos * this.rules.comboPoints;
     const timeBonus = Math.max(0, Math.floor(parTimeSec - seconds)) * this.rules.timeBonusPerSec;
     return {
+      levelId,
       levelName,
       markasHp: hp,
       markasPoints,

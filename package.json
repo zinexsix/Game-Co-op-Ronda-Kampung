@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "serve": "node scripts/serve-dist.mjs",
+    "pameran": "npm run build && node scripts/serve-dist.mjs --open",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

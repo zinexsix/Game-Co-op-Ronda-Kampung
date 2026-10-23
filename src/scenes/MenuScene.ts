@@ -16,6 +16,7 @@ export class MenuScene {
     private readonly input: InputManager,
     private readonly onStart: (slot: number) => void,
     audio: AudioSystem,
+    actions: { fullscreen: () => void; keyTest: () => void },
   ) {
     const keys = PLAYER_BINDINGS.map((b) => `<kbd>${b.skill1Label}</kbd>`).join(" ");
     const controls = PLAYER_BINDINGS.map((b, i) => `<li><b>P${i + 1}</b> ${b.label}</li>`).join("");
@@ -30,7 +31,18 @@ export class MenuScene {
       <div class="menu-start">Tekan ${keys} untuk mulai</div>
       <p class="menu-note">1-4 pemain di satu layar · peran yang kosong dimainkan bot</p>
       <ul class="menu-controls">${controls}</ul>
-      <div class="menu-volume"></div>`;
+      <div class="menu-volume"></div>
+      <div class="menu-actions">
+        <button class="menu-fullscreen">🖥️ Layar penuh <small>F4</small></button>
+        <button class="menu-keytest">⌨️ Uji tombol <small>F10</small></button>
+      </div>`;
+    for (const [sel, fn] of [[".menu-fullscreen", actions.fullscreen], [".menu-keytest", actions.keyTest]] as const) {
+      const btn = this.el.querySelector(sel) as HTMLButtonElement;
+      btn.addEventListener("click", () => {
+        fn();
+        btn.blur();
+      });
+    }
     // Pengaturan volume (mouse operator stan); nilai awal dari game.json.
     const vol = this.el.querySelector(".menu-volume") as HTMLDivElement;
     for (const [kind, label] of [["music", "🎵 Musik"], ["sfx", "🔔 Efek suara"]] as [VolumeKind, string][]) {

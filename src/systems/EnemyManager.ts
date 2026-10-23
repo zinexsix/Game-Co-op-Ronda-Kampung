@@ -78,6 +78,8 @@ export class EnemyManager {
   private fillTypes: string[] | null = null;
   private fillTimer = 0;
   private _activeCount = 0;
+  /** Pengali damage musuh untuk level aktif (levels.json enemyDamageMult; Level 1 lebih ringan). */
+  private damageMult = 1;
 
   constructor(
     scene: Scene,
@@ -134,6 +136,10 @@ export class EnemyManager {
     const out: Record<string, number> = {};
     for (const [id, b] of this.buckets) out[id] = b.model.mesh.getTotalIndices() / 3;
     return out;
+  }
+
+  setDamageMult(mult: number): void {
+    this.damageMult = mult;
   }
 
   /** Titik muncul arena aktif (dipakai mode uji dan benchmark). */
@@ -404,14 +410,14 @@ export class EnemyManager {
         if (boss) {
           this.slam(e, d, boss, markas, players, structures, wall);
         } else if (victim) {
-          const result = victim.takeDamage(d.playerDamage, e.position.x, e.position.z);
-          if (result !== "diabaikan") this.events.onAttack(fx, fz, "pemain", { amount: d.playerDamage, victim, result });
+          const result = victim.takeDamage(d.playerDamage * this.damageMult, e.position.x, e.position.z);
+          if (result !== "diabaikan") this.events.onAttack(fx, fz, "pemain", { amount: d.playerDamage * this.damageMult, victim, result });
         } else if (wall) {
           structures.damageBarricade(wall, d.barricadeDamage);
           this.events.onAttack(fx, fz, "barikade", { amount: d.barricadeDamage });
         } else {
-          markas.damage(d.baseDamage);
-          this.events.onAttack(fx, fz, "markas", { amount: d.baseDamage });
+          markas.damage(d.baseDamage * this.damageMult);
+          this.events.onAttack(fx, fz, "markas", { amount: d.baseDamage * this.damageMult });
         }
       }
     }
@@ -455,16 +461,16 @@ export class EnemyManager {
       if (!p.active || p.downed) continue;
       const gap = Math.hypot(p.position.x - x, p.position.z - z) - p.radius;
       if (gap > boss.slamRadius) continue;
-      const result = p.takeDamage(d.playerDamage, x, z);
-      if (result !== "diabaikan") this.events.onAttack(p.position.x, p.position.z, "pemain", { amount: d.playerDamage, victim: p, result });
+      const result = p.takeDamage(d.playerDamage * this.damageMult, x, z);
+      if (result !== "diabaikan") this.events.onAttack(p.position.x, p.position.z, "pemain", { amount: d.playerDamage * this.damageMult, victim: p, result });
     }
     if (wall) {
       structures.damageBarricade(wall, d.barricadeDamage);
       this.events.onAttack(x, z, "barikade", { amount: d.barricadeDamage });
     }
     if (distanceToBox(x, z, markas.box) <= boss.slamRadius) {
-      markas.damage(d.baseDamage);
-      this.events.onAttack(x, z, "markas", { amount: d.baseDamage });
+      markas.damage(d.baseDamage * this.damageMult);
+      this.events.onAttack(x, z, "markas", { amount: d.baseDamage * this.damageMult });
     }
   }
 

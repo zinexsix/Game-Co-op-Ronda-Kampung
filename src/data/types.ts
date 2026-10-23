@@ -142,6 +142,8 @@ export interface LevelData {
   arena: { id: string; halfWidth: number; halfDepth: number; fogDensity?: number; fogColor?: string };
   /** Batas waktu untuk bonus waktu skor. */
   parTimeSec: number;
+  /** Pengali damage musuh ke pemain & pos ronda di level ini (default 1). */
+  enemyDamageMult?: number;
   tutorial?: boolean;
   spawnPoints: Record<string, [number, number]>;
   waves: WaveData[];
